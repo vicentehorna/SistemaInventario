@@ -1,14 +1,14 @@
-# Blueprint Render: https://render.com/docs/blueprint-spec
-# Tras el primer deploy, configura en el panel las variables sensibles (.env):
-# SQL_SERVER, SQL_DATABASE, SQL_USER, SQL_PASSWORD, FLASK_SECRET_KEY, etc.
-# Google Drive (service account): GOOGLE_DRIVE_CREDENTIALS_JSON = contenido completo del JSON (secreto).
-#   Alternativa: GOOGLE_DRIVE_CREDENTIALS_FILE con ruta dentro del contenedor si monta el archivo.
-# Sustentos vacaciones: GOOGLE_DRIVE_FOLDER_SUSTENTO_VACACIONES = ID/URL carpeta (ideal: unidad compartida).
-# Si la carpeta está en Mi unidad: GOOGLE_DRIVE_SUSTENTO_IMPERSONATE_USER + delegación dominio (Workspace).
+# Blueprint Render — Sistema de Inventario
+# https://render.com/docs/blueprint-spec
+#
+# Tras crear el servicio, configura en el panel (Environment) las variables secretas:
+#   SQL_SERVER, SQL_DATABASE, SQL_USER, SQL_PASSWORD, FLASK_SECRET_KEY
+#
+# Opcional: usuario temporal desactivado en producción (solo en código local).
 
 services:
   - type: web
-    name: portal-minero
+    name: sistema-inventario
     runtime: docker
     region: oregon
     plan: free
@@ -21,4 +21,6 @@ services:
       - key: WEB_CONCURRENCY
         value: "1"
       - key: GUNICORN_TIMEOUT
-        value: "900"
+        value: "120"
+      - key: SQL_ODBC_DRIVER
+        value: "ODBC Driver 18 for SQL Server"

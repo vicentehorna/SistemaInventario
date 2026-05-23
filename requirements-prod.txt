@@ -1,0 +1,8 @@
+# Dependencias mínimas para producción (Render / Docker)
+Flask==3.0.0
+Flask-Login==0.6.3
+Werkzeug==3.1.5
+gunicorn==23.0.0
+python-dotenv==1.0.0
+pyodbc==5.1.0
+resend==2.30.0

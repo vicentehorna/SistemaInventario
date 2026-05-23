@@ -85,6 +85,7 @@ login_manager = LoginManager(app)
 login_manager.login_view = 'login'
 login_manager.login_message_category = 'info'
 
+LOGO_INVENTARIO_FILE = 'LogoInventario.png'
 LOGO_EMPRESA_DEFAULT = 'logo_default.jpg'
 LOGOS_EMPRESA_DIR = os.path.join('static', 'img', 'logos')
 
@@ -108,26 +109,9 @@ def _sync_session_logoweb():
 
 
 def _resolver_logo_empresa_url():
-    """URL estática del logo de la empresa (o logo por defecto si no existe el archivo)."""
-    filename = ''
-    if has_request_context() and current_user.is_authenticated:
-        ensure_user_session()
-        filename = str(session.get('logoweb') or '').strip()
-        if not filename:
-            cia = _company_for_logo_session()
-            if not cia:
-                cia = User.get_minero_lock_company(current_user.id) or ''
-            if cia:
-                filename = (get_logoweb_empresa(cia) or '').strip()
-                session['logoweb'] = filename
-
+    """Logo fijo del sistema de inventario (mismo para todos los usuarios)."""
     logos_root = os.path.join(app.root_path, LOGOS_EMPRESA_DIR)
-    candidates = []
-    if filename:
-        candidates.append(filename)
-    candidates.append(LOGO_EMPRESA_DEFAULT)
-
-    for name in candidates:
+    for name in (LOGO_INVENTARIO_FILE, LOGO_EMPRESA_DEFAULT, 'logo_default.png'):
         if name and os.path.isfile(os.path.join(logos_root, name)):
             return url_for('static', filename=f'img/logos/{name}')
     return url_for('static', filename=f'img/logos/{LOGO_EMPRESA_DEFAULT}')
@@ -137,6 +121,19 @@ def ensure_user_session():
     """Asegura que company y person estén en sesión y actualiza alcance MINERO/SIMPLE (documentos)."""
     if not current_user.is_authenticated:
         return {'company': session.get('company'), 'person': session.get('person')}
+    if User.is_temp_user(current_user.get_id()):
+        session['general_profile'] = True
+        session['minero_profile'] = False
+        session['simple_profile'] = False
+        return {
+            'company': session.get('company'),
+            'person': session.get('person'),
+            'minero_profile': False,
+            'minero_lock_company': None,
+            'simple_profile': False,
+            'simple_lock_company': None,
+            'simple_lock_person': None,
+        }
     cu_company = str(getattr(current_user, 'company', None) or '').strip()
     cu_person = str(getattr(current_user, 'person', None) or '').strip()
     if cu_company:
@@ -144,7 +141,10 @@ def ensure_user_session():
     if cu_person:
         session['person'] = cu_person
     if not session.get('company') or not session.get('person'):
-        info = get_datos_usuario_web(current_user.id)
+        if User.is_temp_user(current_user.get_id()):
+            info = None
+        else:
+            info = get_datos_usuario_web(current_user.id)
         if info:
             session['company'], session['person'] = info['company'], info['person']
             if info.get('logoweb') is not None:
@@ -165,6 +165,12 @@ def ensure_user_session():
 def _refresh_documentos_alcance_session():
     """Fija en sesión compañía (MINERO/SIMPLE) y trabajador (SIMPLE) para Documentos del personal."""
     if not current_user.is_authenticated:
+        return
+    if User.is_temp_user(current_user.get_id()):
+        session['documentos_alcance_uid'] = str(current_user.get_id())
+        session['general_profile'] = True
+        session['minero_profile'] = False
+        session['simple_profile'] = False
         return
     uid = str(current_user.get_id())
     if session.get('documentos_alcance_uid') == uid:
@@ -450,7 +456,7 @@ def _documentos_personal_build_payload(rows, cia, modo='completo'):
 
 def _url_inicio_portal():
     """Página de inicio tras login."""
-    return url_for('articulos_page')
+    return url_for('dashboard')
 
 
 def _documentos_personal_redirect_tras_descarga():
@@ -1075,6 +1081,9 @@ def change_password_route():
     if not user:
         flash('Usuario o contraseña anterior incorrectos.', 'error')
         return redirect(url_for('login'))
+    if User.is_temp_user(user.id):
+        flash('El usuario temporal no puede cambiar contraseña desde aquí.', 'warning')
+        return redirect(url_for('login'))
     ok, msg = cambiar_password(user.id, old_password, new_password)
     flash(msg, 'success' if ok else 'error')
     return redirect(url_for('login'))
@@ -1268,18 +1277,14 @@ def lista_articulos_post():
 @app.route('/dashboard')
 @login_required
 def dashboard():
+    """Panel inicial con acceso a los módulos de inventario."""
     ensure_user_session()
-    if not session.get('simple_profile'):
-        return redirect(url_for('configuracion_usuario'))
-    nombre = str(session.get('simple_lock_person_name') or '').strip()
-    if not nombre and current_user.is_authenticated:
+    nombre = ''
+    if current_user.is_authenticated:
         nombre = str(getattr(current_user, 'nombre', None) or current_user.username or '').strip()
-    return render_template(
-        'dashboard.html',
-        mostrar_documentos_simple=True,
-        tipos_documentos_web=_tipos_documento_web_catalog(),
-        nombre_bienvenida=nombre,
-    )
+        if not nombre:
+            nombre = str(session.get('simple_lock_person_name') or '').strip()
+    return render_template('dashboard.html', nombre_bienvenida=nombre)
 
 
 @app.route('/mis-documentos/<tipodoc>')

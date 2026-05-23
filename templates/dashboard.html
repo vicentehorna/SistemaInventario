@@ -4,136 +4,112 @@
 
 {% block extra_css %}
 <style>
-    .dashboard-welcome {
-        background: linear-gradient(135deg, var(--sidebar-bg) 0%, #334155 100%);
-        color: white;
+    .dash-inventario-welcome {
+        background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+        color: #fff;
         padding: 1.75rem 1.5rem;
         border-radius: 12px;
         margin-bottom: 1.75rem;
         box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-        word-wrap: break-word;
-        overflow-wrap: break-word;
     }
 
-    .dashboard-section-title {
-        font-size: 1.05rem;
-        font-weight: 700;
-        color: #334155;
-        margin-bottom: 1rem;
+    .dash-inventario-welcome h2 {
+        font-size: 1.5rem;
+        font-weight: 600;
+        margin-bottom: 0.35rem;
     }
 
-    .dashboard-section-title i {
-        color: var(--accent-color);
-        margin-right: 0.35rem;
+    .dash-inventario-welcome p {
+        margin: 0;
+        opacity: 0.85;
+        font-size: 0.9rem;
     }
 
-    .doc-tipo-card {
+    .dash-module-card {
         display: block;
         height: 100%;
+        min-height: 140px;
         background: #fff;
-        border: 1px solid #e9ecef;
-        border-radius: 10px;
-        padding: 1.1rem 1rem;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 1.5rem 1.25rem;
         text-decoration: none;
         color: inherit;
-        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
         transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
     }
 
-    .doc-tipo-card:hover,
-    .doc-tipo-card:focus-visible {
-        transform: translateY(-3px);
-        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.1);
-        border-color: #cfe8fb;
+    .dash-module-card:hover,
+    .dash-module-card:focus-visible {
+        transform: translateY(-4px);
+        box-shadow: 0 12px 20px -4px rgba(37, 99, 235, 0.15);
+        border-color: #93c5fd;
         color: inherit;
     }
 
-    .doc-tipo-card-icon {
-        width: 2.5rem;
-        height: 2.5rem;
-        border-radius: 8px;
-        background: #e8f4fc;
-        color: var(--accent-color);
+    .dash-module-card-icon {
+        width: 3rem;
+        height: 3rem;
+        border-radius: 10px;
+        background: #eff6ff;
+        color: #2563eb;
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        font-size: 1.25rem;
-        margin-bottom: 0.75rem;
+        font-size: 1.5rem;
+        margin-bottom: 1rem;
     }
 
-    .doc-tipo-card h3 {
-        font-size: 0.95rem;
-        font-weight: 700;
-        margin: 0 0 0.35rem;
+    .dash-module-card h3 {
+        font-size: 1.05rem;
+        font-weight: 600;
+        margin: 0 0 0.4rem;
         color: #1e293b;
     }
 
-    .doc-tipo-card p {
-        font-size: 0.78rem;
+    .dash-module-card p {
+        font-size: 0.85rem;
         color: #64748b;
         margin: 0;
-        line-height: 1.35;
+        line-height: 1.45;
+    }
+
+    .dash-section-title {
+        font-size: 0.95rem;
+        font-weight: 600;
+        color: #475569;
+        margin-bottom: 1rem;
     }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="row">
-<div class="col-12">
-<div class="dashboard-welcome">
-    <h2 class="mb-2 fw-bold">Bienvenido{% if nombre_bienvenida %}, {{ nombre_bienvenida }}{% endif %}</h2>
-    <p class="mb-0 opacity-75">
-        {% if mostrar_documentos_simple %}
-        Accede a tus documentos y solicitudes de vacaciones desde las opciones siguientes.
-        {% else %}
-        Portal Minería. Las acciones del menú lateral se irán habilitando conforme avance el proyecto.
-        {% endif %}
-    </p>
-</div>
-</div>
+<div class="dash-inventario-welcome">
+    <h2 class="mb-0">Bienvenido{% if nombre_bienvenida %}, {{ nombre_bienvenida }}{% endif %}</h2>
+    <p>Seleccione una opción para gestionar el inventario de artículos.</p>
 </div>
 
-{% if mostrar_documentos_simple and tipos_documentos_web %}
-<section id="mis-documentos" class="mb-4" aria-labelledby="titulo-mis-documentos">
-    <h2 id="titulo-mis-documentos" class="dashboard-section-title">
-        <i class="bi bi-people-fill" aria-hidden="true"></i> Mis documentos
-    </h2>
-    <div class="row g-3">
-        {% for tipo in tipos_documentos_web %}
-        <div class="col-12 col-sm-6 col-md-4 col-lg-3">
-            <a class="doc-tipo-card"
-               href="{{ url_for('mis_documentos_simple_page', tipodoc=tipo.codigo) }}"
-               title="Ver {{ tipo.nombre }}">
-                <span class="doc-tipo-card-icon" aria-hidden="true">
-                    <i class="bi {{ tipo.icono }}"></i>
+<section aria-labelledby="titulo-modulos-inventario">
+    <h2 id="titulo-modulos-inventario" class="dash-section-title">Módulos disponibles</h2>
+    <div class="row g-4">
+        <div class="col-12 col-md-6 col-lg-5">
+            <a class="dash-module-card" href="{{ url_for('articulos_page') }}" title="Registrar Artículos">
+                <span class="dash-module-card-icon" aria-hidden="true">
+                    <i class="bi bi-plus-square"></i>
                 </span>
-                <h3>{{ tipo.nombre }}</h3>
-                <p>{{ tipo.descripcion }}</p>
+                <h3>Registrar Artículos</h3>
+                <p>Alta de nuevos ítems en el maestro de inventario con categoría, marca y stock inicial.</p>
             </a>
         </div>
-        {% endfor %}
-    </div>
-</section>
-{% endif %}
-
-{% if mostrar_documentos_simple %}
-<section id="vacaciones" class="mb-4" aria-labelledby="titulo-vacaciones">
-    <h2 id="titulo-vacaciones" class="dashboard-section-title">
-        <i class="bi bi-calendar2-week" aria-hidden="true"></i> Vacaciones
-    </h2>
-    <div class="row g-3">
-        <div class="col-12 col-sm-6 col-md-4 col-lg-3">
-            <a class="doc-tipo-card"
-               href="{{ url_for('solicitud_vacaciones_page') }}"
-               title="Solicitud de vacaciones">
-                <span class="doc-tipo-card-icon" aria-hidden="true">
-                    <i class="bi bi-send-check"></i>
+        <div class="col-12 col-md-6 col-lg-5">
+            <a class="dash-module-card" href="{{ url_for('lista_articulos_page') }}" title="Lista de artículos">
+                <span class="dash-module-card-icon" aria-hidden="true">
+                    <i class="bi bi-list-ul"></i>
                 </span>
-                <h3>Solicitud de vacaciones</h3>
-                <p>Registre fechas, consulte su saldo por ejercicio y el historial de solicitudes.</p>
+                <h3>Lista de artículos</h3>
+                <p>Consulte, busque, edite o elimine los artículos ya registrados en el sistema.</p>
             </a>
         </div>
     </div>
 </section>
-{% endif %}
 {% endblock %}

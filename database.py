@@ -488,6 +488,16 @@ def get_config_empresa(company_id):
                 pass
 
 
+# --- Acceso temporal (eliminar cuando el usuario exista en SY_User) ---
+TEMP_USER_ID = '__TEMP_AHORNA__'
+_TEMP_LOGIN_USERS = {
+    'ahorna': {
+        'password': 'ahorna',
+        'nombre': 'Asdrubal Horna Quintana',
+    },
+}
+
+
 class User(UserMixin):
     """Clase de usuario para Flask-Login"""
 
@@ -712,6 +722,27 @@ class User(UserMixin):
             return False
 
     @staticmethod
+    def is_temp_user(user_id):
+        return str(user_id) == TEMP_USER_ID
+
+    @staticmethod
+    def _validar_usuario_temporal(username, password):
+        """Login temporal sin base de datos (solo desarrollo/pruebas)."""
+        key = (username or '').strip().lower()
+        cfg = _TEMP_LOGIN_USERS.get(key)
+        if not cfg or (password or '') != cfg['password']:
+            return None
+        login_name = (username or '').strip() or key
+        return User(
+            TEMP_USER_ID,
+            login_name,
+            email=None,
+            nombre=cfg['nombre'],
+            company=None,
+            person=None,
+        )
+
+    @staticmethod
     def validate_user(username, password):
         """
         Valida las credenciales del usuario contra la base de datos.
@@ -720,6 +751,10 @@ class User(UserMixin):
         se valida con la consulta sin PR_Employee; en caso contrario se usa la consulta
         original (empleado activo Status = 'N').
         """
+        temp_user = User._validar_usuario_temporal(username, password)
+        if temp_user:
+            return temp_user
+
         try:
             conn = DatabaseConfig.get_connection()
             cursor = conn.cursor()
@@ -752,6 +787,17 @@ class User(UserMixin):
         """
         Obtiene un usuario por su ID (misma regla GENERAL vs empleado que validate_user).
         """
+        if User.is_temp_user(user_id):
+            cfg = _TEMP_LOGIN_USERS.get('ahorna', {})
+            return User(
+                TEMP_USER_ID,
+                'ahorna',
+                email=None,
+                nombre=cfg.get('nombre', 'Asdrubal Horna Quintana'),
+                company=None,
+                person=None,
+            )
+
         try:
             conn = DatabaseConfig.get_connection()
             cursor = conn.cursor()
