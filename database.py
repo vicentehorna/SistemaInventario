@@ -1899,3 +1899,319 @@ def get_listado_generar_boletas(company, payrolltype, processtype, period, perso
         print(f"Error get_listado_generar_boletas: {e}")
         return []
 
+
+def get_inventario_categorias():
+    """Listado de categorías para el formulario de artículos."""
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT IdCategoria, NombreCategoria
+            FROM dbo.Inventario_Categorias
+            ORDER BY NombreCategoria
+            """
+        )
+        columns = [col[0] for col in cursor.description]
+        rows = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        cursor.close()
+        return rows
+    except Exception as e:
+        _logger_db.exception("get_inventario_categorias: %s", e)
+        return []
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def get_inventario_marcas():
+    """Listado de marcas para el formulario de artículos."""
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT IdMarca, NombreMarca
+            FROM dbo.Inventario_Marcas
+            ORDER BY NombreMarca
+            """
+        )
+        columns = [col[0] for col in cursor.description]
+        rows = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        cursor.close()
+        return rows
+    except Exception as e:
+        _logger_db.exception("get_inventario_marcas: %s", e)
+        return []
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def insertar_inventario_item(
+    codigo,
+    id_categoria,
+    id_marca,
+    descripcion,
+    aplicacion=None,
+    codigo_bomba=None,
+    stock_inicial=0,
+):
+    """
+    Registra un artículo en Inventario_Items.
+    Returns:
+        (True, mensaje) o (False, mensaje_error)
+    """
+    conn = None
+    codigo = (codigo or "").strip()
+    descripcion = (descripcion or "").strip()
+    if not codigo:
+        return False, "El código es obligatorio."
+    if not descripcion:
+        return False, "La descripción es obligatoria."
+    if not id_categoria or not id_marca:
+        return False, "Seleccione categoría y marca."
+
+    try:
+        stock = int(stock_inicial or 0)
+        if stock < 0:
+            return False, "El stock inicial no puede ser negativo."
+    except (TypeError, ValueError):
+        return False, "Stock inicial no válido."
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO dbo.Inventario_Items (
+                Codigo, IdCategoria, IdMarca, Descripcion,
+                Aplicacion, CodigoBomba, StockActual
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                codigo,
+                int(id_categoria),
+                int(id_marca),
+                descripcion,
+                (aplicacion or "").strip() or None,
+                (codigo_bomba or "").strip() or None,
+                stock,
+            ),
+        )
+        conn.commit()
+        cursor.close()
+        return True, f"Artículo «{codigo}» registrado correctamente."
+    except pyodbc.IntegrityError as e:
+        err = str(e).lower()
+        if "uq_codigoitem" in err or "unique" in err:
+            return False, "Ya existe un artículo con ese código."
+        if "fk_items_categorias" in err:
+            return False, "La categoría seleccionada no es válida."
+        if "fk_items_marcas" in err:
+            return False, "La marca seleccionada no es válida."
+        return False, "No se pudo guardar: datos duplicados o referencia inválida."
+    except Exception as e:
+        _logger_db.exception("insertar_inventario_item: %s", e)
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        return False, "Error al guardar el artículo. Verifique la conexión a la base de datos."
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def get_inventario_item_por_id(iditem):
+    """Obtiene un artículo por IdItem para edición."""
+    conn = None
+    try:
+        iditem = int(iditem)
+    except (TypeError, ValueError):
+        return None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT IdItem, Codigo, IdCategoria, IdMarca, Descripcion,
+                   Aplicacion, CodigoBomba, StockActual
+            FROM dbo.Inventario_Items
+            WHERE IdItem = ?
+            """,
+            (iditem,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            cursor.close()
+            return None
+        columns = [col[0] for col in cursor.description]
+        item = {col: val for col, val in zip(columns, row)}
+        cursor.close()
+        return {k.lower(): v for k, v in item.items()}
+    except Exception as e:
+        _logger_db.exception("get_inventario_item_por_id: %s", e)
+        return None
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def actualizar_inventario_item(
+    iditem,
+    id_categoria,
+    id_marca,
+    descripcion,
+    aplicacion=None,
+    codigo_bomba=None,
+    stock_actual=0,
+):
+    """Actualiza un artículo (el código no se modifica)."""
+    conn = None
+    try:
+        iditem = int(iditem)
+    except (TypeError, ValueError):
+        return False, "Artículo no válido."
+    descripcion = (descripcion or "").strip()
+    if not descripcion:
+        return False, "La descripción es obligatoria."
+    if not id_categoria or not id_marca:
+        return False, "Seleccione categoría y marca."
+    try:
+        stock = int(stock_actual or 0)
+        if stock < 0:
+            return False, "El stock no puede ser negativo."
+    except (TypeError, ValueError):
+        return False, "Stock no válido."
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            UPDATE dbo.Inventario_Items
+            SET IdCategoria = ?, IdMarca = ?, Descripcion = ?,
+                Aplicacion = ?, CodigoBomba = ?, StockActual = ?
+            WHERE IdItem = ?
+            """,
+            (
+                int(id_categoria),
+                int(id_marca),
+                descripcion,
+                (aplicacion or "").strip() or None,
+                (codigo_bomba or "").strip() or None,
+                stock,
+                iditem,
+            ),
+        )
+        if cursor.rowcount == 0:
+            conn.rollback()
+            cursor.close()
+            return False, "No se encontró el artículo a actualizar."
+        conn.commit()
+        cursor.close()
+        return True, "Artículo actualizado correctamente."
+    except pyodbc.IntegrityError as e:
+        err = str(e).lower()
+        if "fk_items_categorias" in err:
+            return False, "La categoría seleccionada no es válida."
+        if "fk_items_marcas" in err:
+            return False, "La marca seleccionada no es válida."
+        return False, "No se pudo actualizar: referencia inválida."
+    except Exception as e:
+        _logger_db.exception("actualizar_inventario_item: %s", e)
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        return False, "Error al actualizar el artículo."
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def eliminar_inventario_item(iditem):
+    """Elimina un artículo por IdItem."""
+    conn = None
+    try:
+        iditem = int(iditem)
+    except (TypeError, ValueError):
+        return False, "Artículo no válido."
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "DELETE FROM dbo.Inventario_Items WHERE IdItem = ?",
+            (iditem,),
+        )
+        if cursor.rowcount == 0:
+            conn.rollback()
+            cursor.close()
+            return False, "No se encontró el artículo a eliminar."
+        conn.commit()
+        cursor.close()
+        return True, "Artículo eliminado correctamente."
+    except Exception as e:
+        _logger_db.exception("eliminar_inventario_item: %s", e)
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        return False, "Error al eliminar el artículo."
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def get_listado_articulos_inventario(codigo='', nombre=''):
+    """Ejecuta sp_listadoarticulos_inventario."""
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "EXEC sp_listadoarticulos_inventario @codigo=?, @nombre=?",
+            ((codigo or '').strip(), (nombre or '').strip()),
+        )
+        columns = [col[0] for col in cursor.description]
+        rows = []
+        for row in cursor.fetchall():
+            item = {col: val for col, val in zip(columns, row)}
+            rows.append({k.lower(): v for k, v in item.items()})
+        cursor.close()
+        return rows
+    except Exception as e:
+        _logger_db.exception("get_listadoarticulos_inventario: %s", e)
+        raise
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+

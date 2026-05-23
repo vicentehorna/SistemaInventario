@@ -1,0 +1,334 @@
+{% extends "layout.html" %}
+
+{% block title %}Registrar Artículos{% endblock %}
+
+{% block extra_css %}
+<style>
+    .articulos-view {
+        --bg-main: #f8fafc;
+        --surface: #ffffff;
+        --border-color: #e2e8f0;
+        --text-dark: #1e293b;
+        --text-muted: #64748b;
+        --primary: #2563eb;
+        --primary-hover: #1d4ed8;
+        --focus-ring: rgba(37, 99, 235, 0.15);
+        --required-bg: #fffdf4;
+        --required-border: #ebdcb9;
+    }
+
+    .articulos-view.view-container {
+        padding: 0;
+        background-color: transparent;
+        min-height: auto;
+        margin: -0.25rem 0 0;
+    }
+
+    .articulos-view .section-header {
+        margin-bottom: 1.75rem;
+    }
+
+    .articulos-view .section-header h1 {
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: var(--text-dark);
+        margin: 0;
+    }
+
+    .articulos-view .section-header p {
+        font-size: 0.875rem;
+        color: var(--text-muted);
+        margin: 0.25rem 0 0 0;
+        line-height: 1.45;
+    }
+
+    .articulos-view .form-card-modern {
+        background: var(--surface);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.03), 0 2px 4px -1px rgba(0, 0, 0, 0.02);
+        padding: 2.5rem;
+    }
+
+    .articulos-view .form-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 1.5rem;
+    }
+
+    .articulos-view .form-field {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .articulos-view .full-width {
+        grid-column: span 3;
+    }
+
+    .articulos-view .form-field label {
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: var(--text-dark);
+        letter-spacing: 0.3px;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+    }
+
+    .articulos-view .label-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: #fbbf24;
+        flex-shrink: 0;
+        opacity: 0.85;
+    }
+
+    .articulos-view .input-modern {
+        font-family: inherit;
+        font-size: 0.95rem;
+        color: var(--text-dark);
+        background-color: var(--surface);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 0.75rem 1rem;
+        outline: none;
+        transition: all 0.2s ease-in-out;
+        height: 44px;
+        box-sizing: border-box;
+        width: 100%;
+    }
+
+    .articulos-view .input-required {
+        background-color: var(--required-bg);
+        border-color: var(--required-border);
+    }
+
+    .articulos-view select.input-modern {
+        appearance: none;
+        cursor: pointer;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 1rem center;
+        padding-right: 2.5rem;
+    }
+
+    .articulos-view select.input-required {
+        background-color: var(--required-bg);
+        cursor: pointer;
+    }
+
+    .articulos-view select.input-modern:not([disabled]) {
+        cursor: pointer;
+    }
+
+    .articulos-view .input-modern::placeholder {
+        color: #a0aec0;
+    }
+
+    .articulos-view .input-modern:focus,
+    .articulos-view select.input-modern:focus {
+        border-color: var(--primary);
+        box-shadow: 0 0 0 4px var(--focus-ring);
+        background-color: var(--surface);
+    }
+
+    .articulos-view textarea.input-modern {
+        height: auto;
+        min-height: 80px;
+        resize: vertical;
+    }
+
+    .articulos-view .form-hint-empty {
+        font-size: 0.8rem;
+        color: var(--text-muted);
+        margin: 0;
+    }
+
+    .articulos-view .form-actions {
+        margin-top: 2.5rem;
+        padding-top: 1.5rem;
+        border-top: 1px solid var(--border-color);
+        display: flex;
+        justify-content: flex-end;
+        gap: 1rem;
+        flex-wrap: wrap;
+    }
+
+    .articulos-view .btn-modern {
+        font-size: 0.95rem;
+        font-weight: 500;
+        padding: 0.75rem 1.5rem;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        border: none;
+        height: 44px;
+        text-decoration: none;
+    }
+
+    .articulos-view .btn-secondary {
+        background-color: #f1f5f9;
+        color: #475569;
+    }
+
+    .articulos-view .btn-secondary:hover {
+        background-color: #e2e8f0;
+        color: #475569;
+    }
+
+    .articulos-view .btn-primary {
+        background-color: var(--primary);
+        color: #ffffff;
+    }
+
+    .articulos-view .btn-primary:hover:not(:disabled) {
+        background-color: var(--primary-hover);
+    }
+
+    .articulos-view .btn-primary:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+    }
+
+    /* Solo el código queda bloqueado en edición (no usar :read-only genérico en selects) */
+    .articulos-view input.input-modern.input-bloqueado,
+    .articulos-view input.input-modern[readonly] {
+        background-color: #f1f5f9 !important;
+        color: #64748b;
+        border-color: var(--border-color) !important;
+        cursor: not-allowed;
+    }
+
+    @media (max-width: 992px) {
+        .articulos-view .form-grid {
+            grid-template-columns: repeat(2, 1fr);
+        }
+        .articulos-view .full-width {
+            grid-column: span 2;
+        }
+    }
+
+    @media (max-width: 576px) {
+        .articulos-view .form-card-modern {
+            padding: 1.25rem;
+        }
+        .articulos-view .form-grid {
+            grid-template-columns: 1fr;
+        }
+        .articulos-view .full-width {
+            grid-column: span 1;
+        }
+        .articulos-view .form-actions {
+            flex-direction: column-reverse;
+        }
+        .articulos-view .btn-modern {
+            width: 100%;
+            justify-content: center;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="articulos-view view-container">
+    <div class="section-header">
+        <h1>{% if modo_edicion %}Editar Artículo{% else %}Registrar Artículo{% endif %}</h1>
+        <p>{% if modo_edicion %}Modifique los datos del artículo. El código no puede cambiarse.{% else %}Los campos resaltados en tono cálido son requeridos para el control de inventario.{% endif %}</p>
+    </div>
+
+    <div class="form-card-modern">
+        <form action="{{ url_for('articulos_guardar') }}" method="POST" novalidate>
+            {% if modo_edicion and form.get('iditem') %}
+            <input type="hidden" name="iditem" value="{{ form.get('iditem') }}">
+            {% endif %}
+            <div class="form-grid">
+                <div class="form-field">
+                    <label for="codigo"><span class="label-dot" aria-hidden="true"></span> Código / Nro Parte</label>
+                    <input type="text" id="codigo" name="codigo"
+                           class="input-modern {% if modo_edicion %}input-bloqueado{% else %}input-required{% endif %}"
+                           placeholder="Ej: ND-096400-1240" required autocomplete="off"
+                           value="{{ form.get('codigo', '') }}"
+                           {% if modo_edicion %}readonly tabindex="-1"{% endif %}>
+                </div>
+
+                <div class="form-field">
+                    <label for="id_categoria"><span class="label-dot" aria-hidden="true"></span> Categoría</label>
+                    <select id="id_categoria" name="id_categoria" class="input-modern input-required" required>
+                        <option value="" disabled {% if not form.get('id_categoria') %}selected{% endif %}>
+                            Seleccionar categoría...
+                        </option>
+                        {% for cat in categorias %}
+                        <option value="{{ cat.IdCategoria }}"
+                            {% if form.get('id_categoria')|string == cat.IdCategoria|string %}selected{% endif %}>
+                            {{ cat.NombreCategoria }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                    {% if not categorias %}
+                    <p class="form-hint-empty">No hay categorías. Regístrelas en Inventario_Categorias.</p>
+                    {% endif %}
+                </div>
+
+                <div class="form-field">
+                    <label for="id_marca"><span class="label-dot" aria-hidden="true"></span> Marca</label>
+                    <select id="id_marca" name="id_marca" class="input-modern input-required" required>
+                        <option value="" disabled {% if not form.get('id_marca') %}selected{% endif %}>
+                            Seleccionar marca...
+                        </option>
+                        {% for marca in marcas %}
+                        <option value="{{ marca.IdMarca }}"
+                            {% if form.get('id_marca')|string == marca.IdMarca|string %}selected{% endif %}>
+                            {{ marca.NombreMarca }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                    {% if not marcas %}
+                    <p class="form-hint-empty">No hay marcas. Regístrelas en Inventario_Marcas.</p>
+                    {% endif %}
+                </div>
+
+                <div class="form-field full-width">
+                    <label for="descripcion"><span class="label-dot" aria-hidden="true"></span> Descripción Detallada</label>
+                    <textarea id="descripcion" name="descripcion" class="input-modern input-required"
+                              placeholder="Describa el artículo, dimensiones o características técnicas..." required>{{ form.get('descripcion', '') }}</textarea>
+                </div>
+
+                <div class="form-field">
+                    <label for="aplicacion">Aplicación (Vehículo / Motor)</label>
+                    <input type="text" id="aplicacion" name="aplicacion" class="input-modern"
+                           placeholder="Ej: TOYOTA 14B" autocomplete="off"
+                           value="{{ form.get('aplicacion', '') }}">
+                </div>
+
+                <div class="form-field">
+                    <label for="codigo_bomba">Código de Bomba Asociada</label>
+                    <input type="text" id="codigo_bomba" name="codigo_bomba" class="input-modern"
+                           placeholder="Ej: 096000-6140" autocomplete="off"
+                           value="{{ form.get('codigo_bomba', '') }}">
+                </div>
+
+                <div class="form-field">
+                    <label for="stock_inicial">{% if modo_edicion %}Stock actual{% else %}Stock inicial{% endif %}</label>
+                    <input type="number" step="1" min="0" id="stock_inicial" name="stock_inicial"
+                           class="input-modern" placeholder="0"
+                           value="{{ form.get('stock_inicial', '0') }}">
+                </div>
+            </div>
+
+            <div class="form-actions">
+                <a href="{{ url_for('lista_articulos_page') }}" class="btn-modern btn-secondary text-decoration-none">Cancelar</a>
+                <button type="submit" class="btn-modern btn-primary"
+                        {% if not categorias or not marcas %}disabled title="Complete catálogos de categorías y marcas"{% endif %}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                    {% if modo_edicion %}Actualizar Artículo{% else %}Guardar Artículo{% endif %}
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Portal Minería - {% block title %}{% endblock %}</title>
+    <title>Sistema de Inventario - {% block title %}{% endblock %}</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
@@ -376,77 +376,23 @@
 
             <div class="sidebar-nav-scroll">
                 <ul class="list-unstyled components mb-0">
-                    {% if session.get('simple_profile') %}
-                    <li class="{{ 'active' if request.endpoint in ('dashboard', 'mis_documentos_simple_page', 'solicitud_vacaciones_page') else '' }}">
-                        <a href="{{ url_for('dashboard') }}" class="sidebar-link" title="Dashboard">
-                            <i class="bi bi-speedometer2 sidebar-icon" aria-hidden="true"></i>
-                            <span class="sidebar-link-text">Dashboard</span>
-                        </a>
-                    </li>
-                    {% endif %}
-
                     <li class="py-0">
                         <p class="sidebar-section-title text-uppercase fw-bold opacity-50">Configuración</p>
                     </li>
 
-                    <li class="{{ 'active' if request.endpoint == 'configuracion_usuario' else '' }}">
-                        <a href="{{ url_for('configuracion_usuario') }}" class="sidebar-link" title="Configuración por usuario">
-                            <i class="bi bi-person-gear sidebar-icon" aria-hidden="true"></i>
-                            <span class="sidebar-link-text">Configuración por usuario</span>
+                    <li class="{{ 'active' if request.endpoint in ('articulos_page', 'articulos_editar_page') else '' }}">
+                        <a href="{{ url_for('articulos_page') }}" class="sidebar-link" title="Registrar Artículos">
+                            <i class="bi bi-plus-square sidebar-icon" aria-hidden="true"></i>
+                            <span class="sidebar-link-text">Registrar Artículos</span>
                         </a>
                     </li>
 
-                    <li class="{{ 'active' if request.endpoint == 'carga_documentos' else '' }}">
-                        <a href="{{ url_for('carga_documentos') }}" class="sidebar-link" title="Cargar documentos">
-                            <i class="bi bi-cloud-upload sidebar-icon" aria-hidden="true"></i>
-                            <span class="sidebar-link-text">Cargar documentos</span>
+                    <li class="{{ 'active' if request.endpoint == 'lista_articulos_page' else '' }}">
+                        <a href="{{ url_for('lista_articulos_page') }}" class="sidebar-link" title="Lista de artículos">
+                            <i class="bi bi-list-ul sidebar-icon" aria-hidden="true"></i>
+                            <span class="sidebar-link-text">Lista de artículos</span>
                         </a>
                     </li>
-
-                    {% if session.get('simple_profile') %}
-                    <li class="{{ 'active' if request.endpoint == 'solicitud_vacaciones_page' else '' }}">
-                        <a href="{{ url_for('solicitud_vacaciones_page') }}" class="sidebar-link" title="Solicitud de vacaciones">
-                            <i class="bi bi-send-check sidebar-icon" aria-hidden="true"></i>
-                            <span class="sidebar-link-text">Solicitud de vacaciones</span>
-                        </a>
-                    </li>
-                    {% endif %}
-
-                    <li class="py-0">
-                        <p class="sidebar-section-title text-uppercase fw-bold opacity-50">Reportes</p>
-                    </li>
-
-                    <li class="{{ 'active' if request.endpoint == 'reporte_vacaciones_detalle_page' else '' }}">
-                        <a href="{{ url_for('reporte_vacaciones_detalle_page') }}" class="sidebar-link" title="Detalle de vacaciones">
-                            <i class="bi bi-calendar-range sidebar-icon" aria-hidden="true"></i>
-                            <span class="sidebar-link-text">Detalle de vacaciones</span>
-                        </a>
-                    </li>
-
-                    <li class="{{ 'active' if request.endpoint == 'reporte_saldo_vacaciones_page' else '' }}">
-                        <a href="{{ url_for('reporte_saldo_vacaciones_page') }}" class="sidebar-link" title="Saldo de vacaciones">
-                            <i class="bi bi-pie-chart sidebar-icon" aria-hidden="true"></i>
-                            <span class="sidebar-link-text">Saldo de vacaciones</span>
-                        </a>
-                    </li>
-
-                    {% if session.get('general_profile') or session.get('minero_profile') %}
-                    <li class="{{ 'active' if request.endpoint == 'reporte_aprobar_vacaciones_page' else '' }}">
-                        <a href="{{ url_for('reporte_aprobar_vacaciones_page') }}" class="sidebar-link" title="Aprobar vacaciones">
-                            <i class="bi bi-check2-square sidebar-icon" aria-hidden="true"></i>
-                            <span class="sidebar-link-text">Aprobar vacaciones</span>
-                        </a>
-                    </li>
-                    {% endif %}
-
-                    {% if not session.get('simple_profile') %}
-                    <li class="{{ 'active' if request.endpoint == 'reporte_documentos_personal_page' else '' }}">
-                        <a href="{{ url_for('reporte_documentos_personal_page') }}" class="sidebar-link" title="Documentos del personal">
-                            <i class="bi bi-folder2-open sidebar-icon" aria-hidden="true"></i>
-                            <span class="sidebar-link-text">Documentos del personal</span>
-                        </a>
-                    </li>
-                    {% endif %}
 
                     <hr class="mx-3 opacity-25 mt-3 mb-2">
 

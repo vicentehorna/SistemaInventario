@@ -1,0 +1,401 @@
+{% extends "layout.html" %}
+
+{% block title %}Lista de artículos{% endblock %}
+
+{% block extra_css %}
+<style>
+    .table-scroll-container {
+        max-height: 65vh;
+        overflow: auto;
+        border: 1px solid #dee2e6;
+    }
+
+    .table-lista-articulos {
+        --sticky-col1-w: 7.5rem;
+        font-size: 11px;
+        white-space: nowrap;
+        margin-bottom: 0;
+    }
+
+    .table-lista-articulos th,
+    .table-lista-articulos td {
+        padding: 0.2rem 0.4rem;
+        vertical-align: middle;
+    }
+
+    .table-lista-articulos thead th {
+        position: sticky;
+        top: 0;
+        background-color: #f8f9fa;
+        z-index: 2;
+        box-shadow: 0 1px 0 #dee2e6;
+    }
+
+    .table-lista-articulos .sticky-col-1 {
+        position: sticky;
+        left: 0;
+        z-index: 1;
+        background-color: #fff;
+        min-width: var(--sticky-col1-w);
+        width: var(--sticky-col1-w);
+        max-width: var(--sticky-col1-w);
+        box-sizing: border-box;
+    }
+
+    .table-lista-articulos .sticky-col-2 {
+        position: sticky;
+        left: var(--sticky-col1-w);
+        z-index: 1;
+        background-color: #fff;
+        min-width: 14rem;
+        max-width: 18rem;
+        box-sizing: border-box;
+    }
+
+    .table-lista-articulos thead th.sticky-col-1,
+    .table-lista-articulos thead th.sticky-col-2 {
+        z-index: 3;
+        background-color: #f8f9fa;
+    }
+
+    .table-lista-articulos .col-acciones {
+        min-width: 4.5rem;
+        white-space: nowrap;
+    }
+
+    .table-lista-articulos .acciones-wrap {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.65rem;
+    }
+
+    .table-lista-articulos .accion-icon {
+        border: none;
+        background: none;
+        padding: 0;
+        margin: 0;
+        line-height: 1;
+        font-size: 1rem;
+        cursor: pointer;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        transition: opacity 0.15s ease;
+    }
+
+    .table-lista-articulos .accion-icon:hover {
+        opacity: 0.75;
+    }
+
+    .table-lista-articulos .accion-editar {
+        color: #2563eb;
+    }
+
+    .table-lista-articulos .accion-eliminar {
+        color: #dc3545;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card shadow-sm border-0 mb-4">
+    <div class="card-header bg-white border-bottom-0 pt-4 pb-0">
+        <h5 class="mb-0 fw-bold text-secondary"><i class="bi bi-list-ul"></i> Lista de artículos</h5>
+    </div>
+    <div class="card-body">
+        <form id="frmListaArticulos" class="row g-2 g-lg-2 align-items-end">
+            <div class="col-12 col-md-4 col-lg-3">
+                <label for="txtCodigo" class="form-label small fw-bold text-muted">Código</label>
+                <input type="text" id="txtCodigo" class="form-control form-control-sm" placeholder="Buscar por código..." maxlength="50" autocomplete="off">
+            </div>
+            <div class="col-12 col-md-5 col-lg-4">
+                <label for="txtNombre" class="form-label small fw-bold text-muted">Nombre / Descripción</label>
+                <input type="text" id="txtNombre" class="form-control form-control-sm" placeholder="Buscar en descripción..." maxlength="50" autocomplete="off">
+            </div>
+            <div class="col-12 d-flex align-items-center flex-wrap gap-2 border-top pt-3 mt-3">
+                <button type="submit" class="btn btn-primary btn-sm px-4"><i class="bi bi-search"></i> Consultar</button>
+                <button type="button" class="btn btn-success btn-sm px-4" id="btnExportExcelArticulos" disabled><i class="bi bi-file-earmark-excel"></i> Exportar a Excel</button>
+                <span class="ms-auto text-muted small fw-bold">No. de Registros: <span id="lblRowCountArticulos">0</span></span>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card shadow-sm border-0 d-none" id="cardResultadoArticulos">
+    <div class="card-body">
+        <h4 class="text-center fw-bold mb-3">LISTADO DE ARTÍCULOS</h4>
+        <div class="table-scroll-container">
+            <table class="table table-bordered table-sm table-hover table-lista-articulos align-middle">
+                <thead id="thead-articulos"></thead>
+                <tbody id="tbody-articulos"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', async function () {
+    const URL_REPORTE = {{ url_for('lista_articulos_post') | tojson }};
+    const URL_ELIMINAR = {{ url_for('articulos_eliminar') | tojson }};
+    const URL_EDITAR_BASE = {{ url_for('articulos_editar_page', iditem=0) | tojson }}.replace(/0$/, '');
+    const IDX_STICKY_1 = 0;
+    const IDX_STICKY_2 = 1;
+    const IDX_STOCK = 5;
+
+    let lastExportArticulos = null;
+
+    function escapeHtml(s) {
+        return String(s || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    function fmtCelda(valor, opts) {
+        opts = opts || {};
+        if (valor === null || valor === undefined || valor === '') return '';
+        if (typeof valor === 'number' && Number.isFinite(valor)) {
+            if (opts.entero || Number.isInteger(valor)) {
+                return String(Math.round(valor));
+            }
+            return valor.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+        return String(valor);
+    }
+
+    function urlEditar(iditem) {
+        return URL_EDITAR_BASE + String(iditem);
+    }
+
+    async function eliminarArticulo(iditem, codigo) {
+        const etiqueta = codigo ? `«${codigo}»` : 'este artículo';
+        if (!window.confirm(`¿Está seguro de eliminar ${etiqueta}? Esta acción no se puede deshacer.`)) {
+            return;
+        }
+        try {
+            const res = await fetch(URL_ELIMINAR, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ iditem: iditem })
+            });
+            const payload = await res.json();
+            if (!res.ok || !payload.ok) {
+                alert(payload.error || 'No se pudo eliminar el artículo.');
+                return;
+            }
+            await ejecutarConsultaArticulos();
+        } catch (e) {
+            console.error(e);
+            alert('Error de red o del servidor al eliminar.');
+        }
+    }
+
+    function renderizarTablaArticulos(response) {
+        const thead = document.getElementById('thead-articulos');
+        const tbody = document.getElementById('tbody-articulos');
+        const headers = response.headers || [];
+        const ids = response.ids || [];
+
+        let htmlHeaders = '<tr>';
+        headers.forEach((header, index) => {
+            let sticky = '';
+            if (index === IDX_STICKY_1) sticky = 'sticky-col-1';
+            else if (index === IDX_STICKY_2) sticky = 'sticky-col-2';
+            const align = index === IDX_STOCK ? ' text-end' : '';
+            htmlHeaders += `<th class="${sticky}${align}">${escapeHtml(header)}</th>`;
+        });
+        htmlHeaders += '<th class="text-center col-acciones">Acciones</th></tr>';
+        thead.innerHTML = htmlHeaders;
+
+        const filas = response.data || [];
+        let htmlBody = '';
+        filas.forEach((rowVals, rowIndex) => {
+            const iditem = ids[rowIndex];
+            const codigo = rowVals && rowVals[IDX_STICKY_1] != null ? String(rowVals[IDX_STICKY_1]) : '';
+            htmlBody += '<tr>';
+            (rowVals || []).forEach((valor, index) => {
+                let sticky = '';
+                if (index === IDX_STICKY_1) sticky = 'sticky-col-1 font-monospace fw-bold';
+                else if (index === IDX_STICKY_2) sticky = 'sticky-col-2 text-truncate';
+                const isNum = typeof valor === 'number' && Number.isFinite(valor);
+                const align = index === IDX_STOCK ? 'text-end' : '';
+                const txt = isNum && index === IDX_STOCK
+                    ? fmtCelda(valor, { entero: true })
+                    : isNum ? fmtCelda(valor) : escapeHtml(fmtCelda(valor));
+                htmlBody += `<td class="${[sticky, align].filter(Boolean).join(' ')}">${txt}</td>`;
+            });
+            if (iditem != null && iditem !== '') {
+                htmlBody += `<td class="col-acciones text-center">
+                    <span class="acciones-wrap">
+                        <a href="${escapeHtml(urlEditar(iditem))}" class="accion-icon accion-editar" title="Editar" aria-label="Editar artículo">
+                            <i class="bi bi-pencil" aria-hidden="true"></i>
+                        </a>
+                        <button type="button" class="accion-icon accion-eliminar btn-eliminar-articulo" data-iditem="${escapeHtml(String(iditem))}" data-codigo="${escapeHtml(codigo)}" title="Eliminar" aria-label="Eliminar artículo">
+                            <i class="bi bi-trash" aria-hidden="true"></i>
+                        </button>
+                    </span>
+                </td>`;
+            } else {
+                htmlBody += '<td class="col-acciones text-center text-muted">—</td>';
+            }
+            htmlBody += '</tr>';
+        });
+
+        tbody.innerHTML = htmlBody;
+        tbody.querySelectorAll('.btn-eliminar-articulo').forEach((btn) => {
+            btn.addEventListener('click', function () {
+                const id = parseInt(this.getAttribute('data-iditem'), 10);
+                const cod = this.getAttribute('data-codigo') || '';
+                if (!Number.isFinite(id)) return;
+                eliminarArticulo(id, cod);
+            });
+        });
+        document.getElementById('lblRowCountArticulos').textContent = String(filas.length);
+    }
+
+    async function exportArticulosExcel(payload, meta) {
+        if (typeof ExcelJS === 'undefined') {
+            alert('No se pudo cargar la librería de Excel (ExcelJS). Recargue la página e intente de nuevo.');
+            return;
+        }
+        const headers = payload.headers || [];
+        const filas = payload.data || [];
+        const ncols = headers.length;
+        if (!ncols) return;
+
+        const borderThin = { style: 'thin', color: { argb: 'FFCCCCCC' } };
+        const allBorders = { top: borderThin, left: borderThin, bottom: borderThin, right: borderThin };
+
+        const wb = new ExcelJS.Workbook();
+        const ws = wb.addWorksheet('Artículos', { views: [{ showGridLines: true }] });
+
+        let rowIdx = 1;
+        ws.mergeCells(rowIdx, 1, rowIdx, ncols);
+        const titleCell = ws.getCell(rowIdx, 1);
+        titleCell.value = 'LISTADO DE ARTÍCULOS';
+        titleCell.font = { bold: true, size: 14 };
+        titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+        titleCell.border = allBorders;
+        ws.getRow(rowIdx).height = 26;
+        rowIdx++;
+
+        const metaRow = ws.addRow(['Código filtro', meta.codigo || '(todos)', 'Nombre filtro', meta.nombre || '(todos)']);
+        metaRow.eachCell({ includeEmpty: true }, (cell) => {
+            cell.border = allBorders;
+        });
+        rowIdx += 2;
+
+        const hRow = ws.addRow(headers);
+        hRow.font = { bold: true };
+        hRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+            const idx = colNumber - 1;
+            cell.border = allBorders;
+            if (idx === IDX_STOCK) {
+                cell.alignment = { horizontal: 'right', vertical: 'middle' };
+            }
+        });
+
+        filas.forEach((rowVals) => {
+            const r = ws.addRow(rowVals || []);
+            r.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+                const idx = colNumber - 1;
+                const v = rowVals && rowVals[idx];
+                cell.border = allBorders;
+                if (idx === IDX_STOCK && typeof v === 'number' && Number.isFinite(v)) {
+                    cell.numFmt = '0';
+                    cell.alignment = { horizontal: 'right', vertical: 'middle' };
+                }
+            });
+        });
+
+        ws.getColumn(1).width = 16;
+        ws.getColumn(2).width = 40;
+        for (let c = 3; c <= ncols; c++) {
+            ws.getColumn(c).width = 16;
+        }
+
+        const buffer = await wb.xlsx.writeBuffer();
+        const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const stamp = new Date().toISOString().slice(0, 10);
+        a.download = `listado_articulos_${stamp}.xlsx`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+    }
+
+    async function ejecutarConsultaArticulos() {
+        lastExportArticulos = null;
+        document.getElementById('btnExportExcelArticulos').disabled = true;
+        const codigo = document.getElementById('txtCodigo').value.trim();
+        const nombre = document.getElementById('txtNombre').value.trim();
+
+        try {
+            const res = await fetch(URL_REPORTE, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ codigo, nombre })
+            });
+            const payload = await res.json();
+            if (!res.ok || payload.error) {
+                document.getElementById('cardResultadoArticulos').classList.add('d-none');
+                document.getElementById('lblRowCountArticulos').textContent = '0';
+                alert(payload.error || 'Error al consultar el listado.');
+                return;
+            }
+            if (!Array.isArray(payload.headers) || !Array.isArray(payload.data)) {
+                alert('Respuesta inválida del servidor.');
+                document.getElementById('cardResultadoArticulos').classList.add('d-none');
+                document.getElementById('lblRowCountArticulos').textContent = '0';
+                return;
+            }
+            document.getElementById('cardResultadoArticulos').classList.remove('d-none');
+            renderizarTablaArticulos(payload);
+            lastExportArticulos = {
+                headers: payload.headers,
+                data: payload.data,
+                meta: { codigo, nombre }
+            };
+            document.getElementById('btnExportExcelArticulos').disabled = payload.data.length === 0;
+        } catch (e) {
+            console.error(e);
+            document.getElementById('cardResultadoArticulos').classList.add('d-none');
+            document.getElementById('btnExportExcelArticulos').disabled = true;
+            document.getElementById('lblRowCountArticulos').textContent = '0';
+            alert('Error de red o del servidor.');
+        }
+    }
+
+    document.getElementById('frmListaArticulos').addEventListener('submit', async function (e) {
+        e.preventDefault();
+        await ejecutarConsultaArticulos();
+    });
+
+    document.getElementById('btnExportExcelArticulos').addEventListener('click', async function () {
+        if (!lastExportArticulos || !lastExportArticulos.headers || !lastExportArticulos.headers.length) {
+            alert('Ejecute primero una búsqueda con resultados.');
+            return;
+        }
+        try {
+            await exportArticulosExcel(
+                { headers: lastExportArticulos.headers, data: lastExportArticulos.data },
+                lastExportArticulos.meta
+            );
+        } catch (err) {
+            console.error(err);
+            alert('No se pudo generar el archivo Excel.');
+        }
+    });
+
+    await ejecutarConsultaArticulos();
+});
+</script>
+{% endblock %}

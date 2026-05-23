@@ -63,6 +63,13 @@ from database import (
     solicitud_vacaciones_tiene_cruce,
     get_resumen_solicitud_vacaciones,
     get_max_dias_vacaciones,
+    get_inventario_categorias,
+    get_inventario_marcas,
+    insertar_inventario_item,
+    get_listado_articulos_inventario,
+    get_inventario_item_por_id,
+    actualizar_inventario_item,
+    eliminar_inventario_item,
 )
 
 load_dotenv()
@@ -442,10 +449,8 @@ def _documentos_personal_build_payload(rows, cia, modo='completo'):
 
 
 def _url_inicio_portal():
-    """Página de inicio tras login: dashboard (SIMPLE) o configuración (otros perfiles)."""
-    if session.get('simple_profile'):
-        return url_for('dashboard')
-    return url_for('configuracion_usuario')
+    """Página de inicio tras login."""
+    return url_for('articulos_page')
 
 
 def _documentos_personal_redirect_tras_descarga():
@@ -1081,6 +1086,183 @@ def logout():
     session.clear()
     logout_user()
     return redirect(url_for('login'))
+
+
+def _articulos_form_context(form=None, modo_edicion=False):
+    """Contexto común para GET/POST del formulario de artículos."""
+    return {
+        'categorias': get_inventario_categorias(),
+        'marcas': get_inventario_marcas(),
+        'form': form or {},
+        'modo_edicion': modo_edicion,
+    }
+
+
+def _articulos_form_desde_request():
+    return {
+        'iditem': (request.form.get('iditem') or '').strip(),
+        'codigo': (request.form.get('codigo') or '').strip(),
+        'id_categoria': request.form.get('id_categoria') or '',
+        'id_marca': request.form.get('id_marca') or '',
+        'descripcion': (request.form.get('descripcion') or '').strip(),
+        'aplicacion': (request.form.get('aplicacion') or '').strip(),
+        'codigo_bomba': (request.form.get('codigo_bomba') or '').strip(),
+        'stock_inicial': (request.form.get('stock_inicial') or '0').strip(),
+    }
+
+
+def _item_a_form(item):
+    return {
+        'iditem': item.get('iditem'),
+        'codigo': item.get('codigo') or '',
+        'id_categoria': item.get('idcategoria') or '',
+        'id_marca': item.get('idmarca') or '',
+        'descripcion': item.get('descripcion') or '',
+        'aplicacion': item.get('aplicacion') or '',
+        'codigo_bomba': item.get('codigobomba') or '',
+        'stock_inicial': item.get('stockactual') if item.get('stockactual') is not None else 0,
+    }
+
+
+@app.route('/configuracion/articulos', methods=['GET'])
+@login_required
+def articulos_page():
+    """Formulario de registro de artículos (inventario)."""
+    ensure_user_session()
+    return render_template('articulos.html', **_articulos_form_context())
+
+
+@app.route('/configuracion/articulos/editar/<int:iditem>', methods=['GET'])
+@login_required
+def articulos_editar_page(iditem):
+    """Formulario de edición de un artículo existente."""
+    ensure_user_session()
+    item = get_inventario_item_por_id(iditem)
+    if not item:
+        flash('Artículo no encontrado.', 'error')
+        return redirect(url_for('lista_articulos_page'))
+    return render_template(
+        'articulos.html',
+        **_articulos_form_context(_item_a_form(item), modo_edicion=True),
+    )
+
+
+@app.route('/configuracion/articulos/guardar', methods=['POST'])
+@login_required
+def articulos_guardar():
+    """Registra o actualiza un artículo en Inventario_Items."""
+    ensure_user_session()
+    form = _articulos_form_desde_request()
+    iditem = form.get('iditem') or ''
+
+    if iditem:
+        ok, msg = actualizar_inventario_item(
+            iditem,
+            form['id_categoria'],
+            form['id_marca'],
+            form['descripcion'],
+            aplicacion=form['aplicacion'],
+            codigo_bomba=form['codigo_bomba'],
+            stock_actual=form['stock_inicial'],
+        )
+        modo_edicion = True
+    else:
+        ok, msg = insertar_inventario_item(
+            form['codigo'],
+            form['id_categoria'],
+            form['id_marca'],
+            form['descripcion'],
+            aplicacion=form['aplicacion'],
+            codigo_bomba=form['codigo_bomba'],
+            stock_inicial=form['stock_inicial'],
+        )
+        modo_edicion = False
+
+    if ok:
+        flash(msg, 'success')
+        return redirect(url_for('lista_articulos_page'))
+    flash(msg, 'error')
+    return render_template(
+        'articulos.html',
+        **_articulos_form_context(form, modo_edicion=modo_edicion),
+    )
+
+
+@app.route('/configuracion/articulos/eliminar', methods=['POST'])
+@login_required
+def articulos_eliminar():
+    """Elimina un artículo por IdItem."""
+    ensure_user_session()
+    body = request.get_json(silent=True) or {}
+    iditem = body.get('iditem')
+    ok, msg = eliminar_inventario_item(iditem)
+    if ok:
+        return jsonify({'ok': True, 'message': msg})
+    return jsonify({'ok': False, 'error': msg}), 400
+
+
+@app.route('/configuracion/articulos/lista')
+@login_required
+def lista_articulos_page():
+    """Listado y búsqueda de artículos registrados."""
+    ensure_user_session()
+    return render_template('lista_articulos.html')
+
+
+@app.route('/configuracion/articulos/listado', methods=['POST'])
+@login_required
+def lista_articulos_post():
+    """sp_listadoarticulos_inventario @codigo, @nombre."""
+    ensure_user_session()
+    body = request.get_json(silent=True) or {}
+    codigo = str(body.get('codigo') or '').strip()
+    nombre = str(body.get('nombre') or '').strip()
+
+    headers_es = [
+        'Código',
+        'Descripción',
+        'Categoría',
+        'Aplicación',
+        'Marca',
+        'Stock actual',
+    ]
+    keys_datos = ['codigo', 'descripcion', 'categoria', 'aplicacion', 'marca', 'stockactual']
+
+    try:
+        rows = get_listado_articulos_inventario(codigo, nombre)
+        resultado = []
+        ids = []
+        for r in rows:
+            iditem = r.get('iditem')
+            if iditem is None:
+                for k, v in r.items():
+                    if k.lower() == 'iditem':
+                        iditem = v
+                        break
+            try:
+                ids.append(int(iditem))
+            except (TypeError, ValueError):
+                ids.append(None)
+            fila = []
+            for key in keys_datos:
+                val = r.get(key)
+                if val is None and isinstance(r, dict):
+                    for k, v in r.items():
+                        if k.lower() == key.lower():
+                            val = v
+                            break
+                if key == 'stockactual' and val is not None:
+                    try:
+                        fila.append(int(round(float(val))))
+                    except Exception:
+                        fila.append(_jsonable_value(val))
+                else:
+                    fila.append(_jsonable_value(val))
+            resultado.append(fila)
+        return jsonify({'headers': headers_es, 'data': resultado, 'ids': ids})
+    except Exception as e:
+        logging.exception('lista_articulos_post')
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/dashboard')

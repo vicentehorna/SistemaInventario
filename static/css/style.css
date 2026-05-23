@@ -877,6 +877,23 @@ body {
     display: block;
 }
 
+.login-brand-icon {
+    width: 96px;
+    height: 96px;
+    border-radius: 1rem;
+    background: transparent;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+
+.login-brand-icon .login-brand-svg {
+    width: 96px;
+    height: 96px;
+    display: block;
+}
+
 /* Formulario */
 .input-group-custom { margin-bottom: 1.5rem; }
 
