@@ -401,6 +401,20 @@
                         </a>
                     </li>
 
+                    <li class="{{ 'active' if request.endpoint in ('empresas_page', 'empresas_editar_page') else '' }}">
+                        <a href="{{ url_for('empresas_page') }}" class="sidebar-link" title="Registrar Empresas">
+                            <i class="bi bi-building sidebar-icon" aria-hidden="true"></i>
+                            <span class="sidebar-link-text">Registrar Empresas</span>
+                        </a>
+                    </li>
+
+                    <li class="{{ 'active' if request.endpoint == 'lista_empresas_page' else '' }}">
+                        <a href="{{ url_for('lista_empresas_page') }}" class="sidebar-link" title="Lista de empresas">
+                            <i class="bi bi-buildings sidebar-icon" aria-hidden="true"></i>
+                            <span class="sidebar-link-text">Lista de empresas</span>
+                        </a>
+                    </li>
+
                     <hr class="mx-3 opacity-25 mt-3 mb-2">
 
                     <li>

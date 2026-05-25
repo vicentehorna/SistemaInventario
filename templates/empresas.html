@@ -1,0 +1,495 @@
+{% extends "layout.html" %}
+
+{% block title %}Registrar Empresas{% endblock %}
+
+{% block extra_css %}
+<style>
+    .empresas-view {
+        --bg-main: #f8fafc;
+        --surface: #ffffff;
+        --border-color: #e2e8f0;
+        --text-dark: #1e293b;
+        --text-muted: #64748b;
+        --primary: #2563eb;
+        --primary-hover: #1d4ed8;
+        --focus-ring: rgba(37, 99, 235, 0.15);
+        --required-bg: #fffdf4;
+        --required-border: #ebdcb9;
+    }
+
+    .empresas-view.view-container {
+        padding: 0;
+        background-color: transparent;
+        min-height: auto;
+        margin: -0.25rem 0 0;
+    }
+
+    .empresas-view .section-header {
+        margin-bottom: 1.75rem;
+    }
+
+    .empresas-view .section-header h1 {
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: var(--text-dark);
+        margin: 0;
+    }
+
+    .empresas-view .section-header p {
+        font-size: 0.875rem;
+        color: var(--text-muted);
+        margin: 0.25rem 0 0 0;
+        line-height: 1.45;
+    }
+
+    .empresas-view .form-card-modern {
+        background: var(--surface);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.03), 0 2px 4px -1px rgba(0, 0, 0, 0.02);
+        padding: 2.5rem;
+    }
+
+    .empresas-view .form-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 1.5rem;
+    }
+
+    .empresas-view .form-field {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .empresas-view .full-width {
+        grid-column: span 3;
+    }
+
+    .empresas-view .span-2 {
+        grid-column: span 2;
+    }
+
+    .empresas-view .form-field label {
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: var(--text-dark);
+        letter-spacing: 0.3px;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+    }
+
+    .empresas-view .label-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: #fbbf24;
+        flex-shrink: 0;
+        opacity: 0.85;
+    }
+
+    .empresas-view .input-modern {
+        font-family: inherit;
+        font-size: 0.95rem;
+        color: var(--text-dark);
+        background-color: var(--surface);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 0.75rem 1rem;
+        outline: none;
+        transition: all 0.2s ease-in-out;
+        height: 44px;
+        box-sizing: border-box;
+        width: 100%;
+    }
+
+    .empresas-view .input-required {
+        background-color: var(--required-bg);
+        border-color: var(--required-border);
+    }
+
+    .empresas-view select.input-modern {
+        appearance: none;
+        cursor: pointer;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 1rem center;
+        padding-right: 2.5rem;
+    }
+
+    .empresas-view select.input-required {
+        background-color: var(--required-bg);
+    }
+
+    .empresas-view select.input-modern:disabled {
+        background-color: #f1f5f9;
+        color: #94a3b8;
+        cursor: not-allowed;
+    }
+
+    .empresas-view .input-modern:focus,
+    .empresas-view select.input-modern:focus {
+        border-color: var(--primary);
+        box-shadow: 0 0 0 4px var(--focus-ring);
+        background-color: var(--surface);
+    }
+
+    .empresas-view textarea.input-modern {
+        height: auto;
+        min-height: 80px;
+        resize: vertical;
+    }
+
+    .empresas-view .form-hint-empty {
+        font-size: 0.8rem;
+        color: var(--text-muted);
+        margin: 0;
+    }
+
+    .empresas-view .roles-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1.5rem;
+        align-items: center;
+        padding: 0.75rem 0;
+    }
+
+    .empresas-view .checkbox-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.9rem;
+        font-weight: 500;
+        color: var(--text-dark);
+        cursor: pointer;
+        user-select: none;
+    }
+
+    .empresas-view .checkbox-pill input {
+        width: 1.1rem;
+        height: 1.1rem;
+        accent-color: var(--primary);
+        cursor: pointer;
+    }
+
+    .empresas-view .form-actions {
+        margin-top: 2.5rem;
+        padding-top: 1.5rem;
+        border-top: 1px solid var(--border-color);
+        display: flex;
+        justify-content: flex-end;
+        gap: 1rem;
+        flex-wrap: wrap;
+    }
+
+    .empresas-view .btn-modern {
+        font-size: 0.95rem;
+        font-weight: 500;
+        padding: 0.75rem 1.5rem;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        border: none;
+        height: 44px;
+        text-decoration: none;
+    }
+
+    .empresas-view .btn-secondary {
+        background-color: #f1f5f9;
+        color: #475569;
+    }
+
+    .empresas-view .btn-secondary:hover {
+        background-color: #e2e8f0;
+        color: #475569;
+    }
+
+    .empresas-view .btn-primary {
+        background-color: var(--primary);
+        color: #ffffff;
+    }
+
+    .empresas-view .btn-primary:hover:not(:disabled) {
+        background-color: var(--primary-hover);
+    }
+
+    .empresas-view .btn-primary:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+    }
+
+    .empresas-view input.input-modern.input-bloqueado,
+    .empresas-view input.input-modern[readonly] {
+        background-color: #f1f5f9 !important;
+        color: #64748b;
+        border-color: var(--border-color) !important;
+        cursor: not-allowed;
+    }
+
+    @media (max-width: 992px) {
+        .empresas-view .form-grid {
+            grid-template-columns: repeat(2, 1fr);
+        }
+        .empresas-view .full-width,
+        .empresas-view .span-2 {
+            grid-column: span 2;
+        }
+    }
+
+    @media (max-width: 576px) {
+        .empresas-view .form-card-modern {
+            padding: 1.25rem;
+        }
+        .empresas-view .form-grid {
+            grid-template-columns: 1fr;
+        }
+        .empresas-view .full-width,
+        .empresas-view .span-2 {
+            grid-column: span 1;
+        }
+        .empresas-view .form-actions {
+            flex-direction: column-reverse;
+        }
+        .empresas-view .btn-modern {
+            width: 100%;
+            justify-content: center;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="empresas-view view-container">
+    <div class="section-header">
+        <h1>{% if modo_edicion %}Editar Empresa{% else %}Registrar Empresa{% endif %}</h1>
+        <p>{% if modo_edicion %}Modifique los datos del cliente o proveedor. El RUC no puede cambiarse.{% else %}Registre clientes y proveedores con su ubicación (ubigeo). Los campos resaltados son obligatorios.{% endif %}</p>
+    </div>
+
+    <div class="form-card-modern">
+        <form id="frmEmpresas" action="{{ url_for('empresas_guardar') }}" method="POST" novalidate>
+            {% if modo_edicion and form.get('idempresa') %}
+            <input type="hidden" name="idempresa" value="{{ form.get('idempresa') }}">
+            {% endif %}
+            <div class="form-grid">
+                <div class="form-field">
+                    <label for="ruc"><span class="label-dot" aria-hidden="true"></span> RUC</label>
+                    <input type="text" id="ruc" name="ruc" maxlength="20"
+                           class="input-modern {% if modo_edicion %}input-bloqueado{% else %}input-required{% endif %}"
+                           placeholder="Ej: 20123456789" required autocomplete="off"
+                           value="{{ form.get('ruc', '') }}"
+                           {% if modo_edicion %}readonly tabindex="-1"{% endif %}>
+                </div>
+
+                <div class="form-field span-2">
+                    <label for="razon_social"><span class="label-dot" aria-hidden="true"></span> Razón social</label>
+                    <input type="text" id="razon_social" name="razon_social" maxlength="250"
+                           class="input-modern input-required"
+                           placeholder="Nombre o razón social de la empresa" required
+                           value="{{ form.get('razon_social', '') }}">
+                </div>
+
+                <div class="form-field full-width">
+                    <label for="direccion">Dirección</label>
+                    <textarea id="direccion" name="direccion" class="input-modern" maxlength="500"
+                              placeholder="Dirección fiscal o de despacho...">{{ form.get('direccion', '') }}</textarea>
+                </div>
+
+                <div class="form-field">
+                    <label for="id_departamento"><span class="label-dot" aria-hidden="true"></span> Departamento</label>
+                    <select id="id_departamento" name="id_departamento" class="input-modern input-required" required
+                            data-inicial="{{ form.get('id_departamento', '') }}">
+                        <option value="" disabled {% if not form.get('id_departamento') %}selected{% endif %}>
+                            Seleccionar departamento...
+                        </option>
+                        {% for dep in departamentos %}
+                        <option value="{{ dep.IdDepartamento }}"
+                            {% if form.get('id_departamento')|string == dep.IdDepartamento|string %}selected{% endif %}>
+                            {{ dep.NombreDepartamento }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                    {% if not departamentos %}
+                    <p class="form-hint-empty">No hay departamentos en Ubigeo_Departamentos.</p>
+                    {% endif %}
+                </div>
+
+                <div class="form-field">
+                    <label for="id_provincia"><span class="label-dot" aria-hidden="true"></span> Provincia</label>
+                    <select id="id_provincia" name="id_provincia" class="input-modern input-required" required disabled
+                            data-inicial="{{ form.get('id_provincia', '') }}">
+                        <option value="" disabled selected>Seleccionar provincia...</option>
+                    </select>
+                </div>
+
+                <div class="form-field">
+                    <label for="id_distrito"><span class="label-dot" aria-hidden="true"></span> Distrito</label>
+                    <select id="id_distrito" name="id_distrito" class="input-modern input-required" required disabled
+                            data-inicial="{{ form.get('id_distrito', '') }}">
+                        <option value="" disabled selected>Seleccionar distrito...</option>
+                    </select>
+                </div>
+
+                <div class="form-field">
+                    <label for="telefono">Teléfono</label>
+                    <input type="text" id="telefono" name="telefono" maxlength="50" class="input-modern"
+                           placeholder="Ej: 01 234 5678" value="{{ form.get('telefono', '') }}">
+                </div>
+
+                <div class="form-field span-2">
+                    <label for="correo">Correo electrónico</label>
+                    <input type="email" id="correo" name="correo" maxlength="150" class="input-modern"
+                           placeholder="contacto@empresa.com" value="{{ form.get('correo', '') }}">
+                </div>
+
+                <div class="form-field span-2">
+                    <span class="label-dot" aria-hidden="true" style="display:inline-block;margin-bottom:0.25rem;"></span>
+                    <label class="mb-1">Tipo de entidad</label>
+                    <div class="roles-row">
+                        <label class="checkbox-pill">
+                            <input type="checkbox" name="es_cliente" value="1"
+                                   {% if form.get('es_cliente') %}checked{% endif %}>
+                            Es cliente
+                        </label>
+                        <label class="checkbox-pill">
+                            <input type="checkbox" name="es_proveedor" value="1"
+                                   {% if form.get('es_proveedor') %}checked{% endif %}>
+                            Es proveedor
+                        </label>
+                    </div>
+                    <p class="form-hint-empty">Marque al menos cliente o proveedor.</p>
+                </div>
+
+                <div class="form-field">
+                    <label for="estado" class="mb-1">Estado</label>
+                    <div class="roles-row">
+                        <label class="checkbox-pill" for="estado">
+                            <input type="checkbox" id="estado" name="estado" value="1"
+                                   {% if form.get('estado') is not defined or form.get('estado') %}checked{% endif %}>
+                            Activo
+                        </label>
+                    </div>
+                    <p class="form-hint-empty">Por defecto la empresa queda activa.</p>
+                </div>
+            </div>
+
+            <div class="form-actions">
+                <a href="{{ url_for('lista_empresas_page') }}" class="btn-modern btn-secondary text-decoration-none">Cancelar</a>
+                <button type="submit" class="btn-modern btn-primary" id="btnGuardarEmpresa"
+                        {% if not departamentos %}disabled title="Cargue el catálogo de ubigeo"{% endif %}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                    {% if modo_edicion %}Actualizar Empresa{% else %}Guardar Empresa{% endif %}
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const URL_PROVINCIAS = {{ url_for('api_ubigeo_provincias') | tojson }};
+    const URL_DISTRITOS = {{ url_for('api_ubigeo_distritos') | tojson }};
+
+    const selDep = document.getElementById('id_departamento');
+    const selProv = document.getElementById('id_provincia');
+    const selDist = document.getElementById('id_distrito');
+    const frm = document.getElementById('frmEmpresas');
+
+    if (!selDep || !selProv || !selDist) return;
+
+    const inicialDep = (selDep.dataset.inicial || '').trim();
+    const inicialProv = (selProv.dataset.inicial || '').trim();
+    const inicialDist = (selDist.dataset.inicial || '').trim();
+
+    function opcionPlaceholder(texto) {
+        const o = document.createElement('option');
+        o.value = '';
+        o.disabled = true;
+        o.selected = true;
+        o.textContent = texto;
+        return o;
+    }
+
+    function llenarSelect(select, items, valorSeleccionado, placeholder) {
+        select.innerHTML = '';
+        select.appendChild(opcionPlaceholder(placeholder));
+        items.forEach(function (item) {
+            const o = document.createElement('option');
+            o.value = item.id;
+            o.textContent = item.text;
+            if (valorSeleccionado && String(valorSeleccionado) === String(item.id)) {
+                o.selected = true;
+                select.options[0].selected = false;
+            }
+            select.appendChild(o);
+        });
+        select.disabled = items.length === 0;
+    }
+
+    async function cargarProvincias(idDep, valorProv, valorDist) {
+        llenarSelect(selProv, [], '', 'Seleccionar provincia...');
+        llenarSelect(selDist, [], '', 'Seleccionar distrito...');
+        selDist.disabled = true;
+        if (!idDep) {
+            selProv.disabled = true;
+            return;
+        }
+        try {
+            const res = await fetch(URL_PROVINCIAS + '?id_departamento=' + encodeURIComponent(idDep));
+            const data = await res.json();
+            llenarSelect(selProv, data, valorProv || '', 'Seleccionar provincia...');
+            if (valorProv) {
+                await cargarDistritos(valorProv, valorDist || '');
+            }
+        } catch (e) {
+            console.error(e);
+            selProv.disabled = true;
+        }
+    }
+
+    async function cargarDistritos(idProv, valorDist) {
+        llenarSelect(selDist, [], '', 'Seleccionar distrito...');
+        if (!idProv) {
+            selDist.disabled = true;
+            return;
+        }
+        try {
+            const res = await fetch(URL_DISTRITOS + '?id_provincia=' + encodeURIComponent(idProv));
+            const data = await res.json();
+            llenarSelect(selDist, data, valorDist || '', 'Seleccionar distrito...');
+        } catch (e) {
+            console.error(e);
+            selDist.disabled = true;
+        }
+    }
+
+    selDep.addEventListener('change', function () {
+        cargarProvincias(this.value, '', '');
+    });
+
+    selProv.addEventListener('change', function () {
+        cargarDistritos(this.value, '');
+    });
+
+    if (frm) {
+        frm.addEventListener('submit', function (e) {
+            const cli = frm.querySelector('input[name="es_cliente"]');
+            const prov = frm.querySelector('input[name="es_proveedor"]');
+            if (!cli.checked && !prov.checked) {
+                e.preventDefault();
+                alert('Indique si la empresa es cliente, proveedor o ambos.');
+            }
+        });
+    }
+
+    if (inicialDep) {
+        cargarProvincias(inicialDep, inicialProv, inicialDist);
+    }
+});
+</script>
+{% endblock %}

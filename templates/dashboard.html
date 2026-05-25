@@ -86,7 +86,7 @@
 {% block content %}
 <div class="dash-inventario-welcome">
     <h2 class="mb-0">Bienvenido{% if nombre_bienvenida %}, {{ nombre_bienvenida }}{% endif %}</h2>
-    <p>Seleccione una opción para gestionar el inventario de artículos.</p>
+    <p>Seleccione una opción para gestionar artículos, empresas y el inventario.</p>
 </div>
 
 <section aria-labelledby="titulo-modulos-inventario">
@@ -108,6 +108,24 @@
                 </span>
                 <h3>Lista de artículos</h3>
                 <p>Consulte, busque, edite o elimine los artículos ya registrados en el sistema.</p>
+            </a>
+        </div>
+        <div class="col-12 col-md-6 col-lg-5">
+            <a class="dash-module-card" href="{{ url_for('empresas_page') }}" title="Registrar Empresas">
+                <span class="dash-module-card-icon" aria-hidden="true">
+                    <i class="bi bi-building"></i>
+                </span>
+                <h3>Registrar Empresas</h3>
+                <p>Alta de clientes y proveedores con RUC, datos de contacto y ubigeo.</p>
+            </a>
+        </div>
+        <div class="col-12 col-md-6 col-lg-5">
+            <a class="dash-module-card" href="{{ url_for('lista_empresas_page') }}" title="Lista de empresas">
+                <span class="dash-module-card-icon" aria-hidden="true">
+                    <i class="bi bi-buildings"></i>
+                </span>
+                <h3>Lista de empresas</h3>
+                <p>Consulte, busque, edite o elimine clientes y proveedores registrados.</p>
             </a>
         </div>
     </div>

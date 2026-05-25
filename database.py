@@ -2261,3 +2261,422 @@ def get_listado_articulos_inventario(codigo='', nombre=''):
             except Exception:
                 pass
 
+
+def get_ubigeo_departamentos():
+    """Departamentos para selector de ubigeo."""
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT IdDepartamento, NombreDepartamento
+            FROM dbo.Ubigeo_Departamentos
+            ORDER BY NombreDepartamento
+            """
+        )
+        columns = [col[0] for col in cursor.description]
+        rows = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        cursor.close()
+        return rows
+    except Exception as e:
+        _logger_db.exception("get_ubigeo_departamentos: %s", e)
+        return []
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def get_ubigeo_provincias(id_departamento):
+    """Provincias filtradas por departamento."""
+    id_departamento = (id_departamento or "").strip()
+    if not id_departamento:
+        return []
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT IdProvincia, NombreProvincia
+            FROM dbo.Ubigeo_Provincias
+            WHERE IdDepartamento = ?
+            ORDER BY NombreProvincia
+            """,
+            (id_departamento,),
+        )
+        columns = [col[0] for col in cursor.description]
+        rows = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        cursor.close()
+        return rows
+    except Exception as e:
+        _logger_db.exception("get_ubigeo_provincias: %s", e)
+        return []
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def get_ubigeo_distritos(id_provincia):
+    """Distritos filtrados por provincia."""
+    id_provincia = (id_provincia or "").strip()
+    if not id_provincia:
+        return []
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT IdDistrito, NombreDistrito
+            FROM dbo.Ubigeo_Distritos
+            WHERE IdProvincia = ?
+            ORDER BY NombreDistrito
+            """,
+            (id_provincia,),
+        )
+        columns = [col[0] for col in cursor.description]
+        rows = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        cursor.close()
+        return rows
+    except Exception as e:
+        _logger_db.exception("get_ubigeo_distritos: %s", e)
+        return []
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def _empresa_flags_desde_form(es_cliente, es_proveedor):
+    """Convierte valores de formulario a bit (0/1)."""
+    def _bit(val):
+        if val is None:
+            return 0
+        s = str(val).strip().lower()
+        if s in ('1', 'true', 'on', 'yes', 'si', 'sí'):
+            return 1
+        try:
+            return 1 if int(s) else 0
+        except (TypeError, ValueError):
+            return 0
+
+    cli = _bit(es_cliente)
+    prov = _bit(es_proveedor)
+    return cli, prov
+
+
+def _estado_bit_desde_form(estado):
+    """Checkbox estado: ausente o desmarcado = inactivo (0)."""
+    if estado is None:
+        return 0
+    s = str(estado).strip().lower()
+    if s in ('1', 'true', 'on', 'yes'):
+        return 1
+    if s in ('0', 'false', 'off', 'no'):
+        return 0
+    try:
+        return 1 if int(estado) else 0
+    except (TypeError, ValueError):
+        return 0
+
+
+def insertar_inventario_empresa(
+    ruc,
+    razon_social,
+    direccion=None,
+    id_departamento=None,
+    id_provincia=None,
+    id_distrito=None,
+    telefono=None,
+    correo=None,
+    es_cliente=0,
+    es_proveedor=0,
+    estado=1,
+):
+    """Registra proveedor/cliente en Inventario_Empresas."""
+    conn = None
+    ruc = (ruc or "").strip()
+    razon_social = (razon_social or "").strip()
+    if not ruc:
+        return False, "El RUC es obligatorio."
+    if not razon_social:
+        return False, "La razón social es obligatoria."
+    es_cliente, es_proveedor = _empresa_flags_desde_form(es_cliente, es_proveedor)
+    if not es_cliente and not es_proveedor:
+        return False, "Indique si la empresa es cliente, proveedor o ambos."
+    if not (id_distrito or "").strip():
+        return False, "Seleccione el distrito (ubigeo)."
+
+    estado_bit = _estado_bit_desde_form(estado)
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO dbo.Inventario_Empresas (
+                RUC, RazonSocial, Direccion,
+                IdDepartamento, IdProvincia, IdDistrito,
+                Telefono, Correo, EsCliente, EsProveedor, Estado
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                ruc,
+                razon_social,
+                (direccion or "").strip() or None,
+                (id_departamento or "").strip() or None,
+                (id_provincia or "").strip() or None,
+                (id_distrito or "").strip(),
+                (telefono or "").strip() or None,
+                (correo or "").strip() or None,
+                es_cliente,
+                es_proveedor,
+                estado_bit,
+            ),
+        )
+        conn.commit()
+        cursor.close()
+        return True, f"Empresa «{razon_social}» registrada correctamente."
+    except pyodbc.IntegrityError as e:
+        err = str(e).lower()
+        if "uq_empresas_ruc" in err or "unique" in err:
+            return False, "Ya existe una empresa con ese RUC."
+        if "fk_empresas_distritos" in err:
+            return False, "El distrito seleccionado no es válido."
+        return False, "No se pudo guardar: datos duplicados o referencia inválida."
+    except Exception as e:
+        _logger_db.exception("insertar_inventario_empresa: %s", e)
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        return False, "Error al guardar la empresa. Verifique la conexión a la base de datos."
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def get_inventario_empresa_por_id(idempresa):
+    """Obtiene una empresa por IdEmpresa para edición."""
+    conn = None
+    try:
+        idempresa = int(idempresa)
+    except (TypeError, ValueError):
+        return None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT IdEmpresa, RUC, RazonSocial, Direccion,
+                   IdDepartamento, IdProvincia, IdDistrito,
+                   Telefono, Correo, EsCliente, EsProveedor, Estado
+            FROM dbo.Inventario_Empresas
+            WHERE IdEmpresa = ?
+            """,
+            (idempresa,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            cursor.close()
+            return None
+        columns = [col[0] for col in cursor.description]
+        item = {col: val for col, val in zip(columns, row)}
+        cursor.close()
+        return {k.lower(): v for k, v in item.items()}
+    except Exception as e:
+        _logger_db.exception("get_inventario_empresa_por_id: %s", e)
+        return None
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def actualizar_inventario_empresa(
+    idempresa,
+    razon_social,
+    direccion=None,
+    id_departamento=None,
+    id_provincia=None,
+    id_distrito=None,
+    telefono=None,
+    correo=None,
+    es_cliente=0,
+    es_proveedor=0,
+    estado=1,
+):
+    """Actualiza empresa (el RUC no se modifica)."""
+    conn = None
+    try:
+        idempresa = int(idempresa)
+    except (TypeError, ValueError):
+        return False, "Empresa no válida."
+    razon_social = (razon_social or "").strip()
+    if not razon_social:
+        return False, "La razón social es obligatoria."
+    es_cliente, es_proveedor = _empresa_flags_desde_form(es_cliente, es_proveedor)
+    if not es_cliente and not es_proveedor:
+        return False, "Indique si la empresa es cliente, proveedor o ambos."
+    if not (id_distrito or "").strip():
+        return False, "Seleccione el distrito (ubigeo)."
+
+    estado_bit = _estado_bit_desde_form(estado)
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            UPDATE dbo.Inventario_Empresas
+            SET RazonSocial = ?, Direccion = ?,
+                IdDepartamento = ?, IdProvincia = ?, IdDistrito = ?,
+                Telefono = ?, Correo = ?, EsCliente = ?, EsProveedor = ?, Estado = ?
+            WHERE IdEmpresa = ?
+            """,
+            (
+                razon_social,
+                (direccion or "").strip() or None,
+                (id_departamento or "").strip() or None,
+                (id_provincia or "").strip() or None,
+                (id_distrito or "").strip(),
+                (telefono or "").strip() or None,
+                (correo or "").strip() or None,
+                es_cliente,
+                es_proveedor,
+                estado_bit,
+                idempresa,
+            ),
+        )
+        if cursor.rowcount == 0:
+            conn.rollback()
+            cursor.close()
+            return False, "No se encontró la empresa a actualizar."
+        conn.commit()
+        cursor.close()
+        return True, "Empresa actualizada correctamente."
+    except pyodbc.IntegrityError as e:
+        err = str(e).lower()
+        if "fk_empresas_distritos" in err:
+            return False, "El distrito seleccionado no es válido."
+        return False, "No se pudo actualizar: referencia inválida."
+    except Exception as e:
+        _logger_db.exception("actualizar_inventario_empresa: %s", e)
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        return False, "Error al actualizar la empresa."
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def eliminar_inventario_empresa(idempresa):
+    """Elimina una empresa por IdEmpresa."""
+    conn = None
+    try:
+        idempresa = int(idempresa)
+    except (TypeError, ValueError):
+        return False, "Empresa no válida."
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "DELETE FROM dbo.Inventario_Empresas WHERE IdEmpresa = ?",
+            (idempresa,),
+        )
+        if cursor.rowcount == 0:
+            conn.rollback()
+            cursor.close()
+            return False, "No se encontró la empresa a eliminar."
+        conn.commit()
+        cursor.close()
+        return True, "Empresa eliminada correctamente."
+    except Exception as e:
+        _logger_db.exception("eliminar_inventario_empresa: %s", e)
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        return False, "Error al eliminar la empresa. Puede estar referenciada en otros registros."
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def get_listado_empresas_inventario(ruc='', razon_social=''):
+    """Listado de empresas con filtros opcionales."""
+    conn = None
+    ruc_s = (ruc or '').strip()
+    nombre_s = (razon_social or '').strip()
+    ruc_like = f'%{ruc_s}%'
+    nombre_like = f'%{nombre_s}%'
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT
+                e.IdEmpresa,
+                e.RUC,
+                e.RazonSocial,
+                e.Telefono,
+                e.Correo,
+                e.EsCliente,
+                e.EsProveedor,
+                e.Estado,
+                dep.NombreDepartamento,
+                p.NombreProvincia,
+                d.NombreDistrito
+            FROM dbo.Inventario_Empresas e
+            LEFT JOIN dbo.Ubigeo_Distritos d ON e.IdDistrito = d.IdDistrito
+            LEFT JOIN dbo.Ubigeo_Provincias p ON e.IdProvincia = p.IdProvincia
+            LEFT JOIN dbo.Ubigeo_Departamentos dep ON e.IdDepartamento = dep.IdDepartamento
+            WHERE (? = '' OR e.RUC LIKE ?)
+              AND (? = '' OR e.RazonSocial LIKE ?)
+            ORDER BY e.RazonSocial
+            """,
+            (ruc_s, ruc_like, nombre_s, nombre_like),
+        )
+        columns = [col[0] for col in cursor.description]
+        rows = []
+        for row in cursor.fetchall():
+            item = {col: val for col, val in zip(columns, row)}
+            rows.append({k.lower(): v for k, v in item.items()})
+        cursor.close()
+        return rows
+    except Exception as e:
+        _logger_db.exception("get_listado_empresas_inventario: %s", e)
+        raise
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+

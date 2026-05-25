@@ -70,6 +70,14 @@ from database import (
     get_inventario_item_por_id,
     actualizar_inventario_item,
     eliminar_inventario_item,
+    get_ubigeo_departamentos,
+    get_ubigeo_provincias,
+    get_ubigeo_distritos,
+    insertar_inventario_empresa,
+    get_inventario_empresa_por_id,
+    actualizar_inventario_empresa,
+    eliminar_inventario_empresa,
+    get_listado_empresas_inventario,
 )
 
 load_dotenv()
@@ -1272,6 +1280,260 @@ def lista_articulos_post():
     except Exception as e:
         logging.exception('lista_articulos_post')
         return jsonify({'error': str(e)}), 500
+
+
+def _empresas_form_context(form=None, modo_edicion=False):
+    """Contexto común para GET/POST del formulario de empresas."""
+    return {
+        'departamentos': get_ubigeo_departamentos(),
+        'form': form or {},
+        'modo_edicion': modo_edicion,
+    }
+
+
+def _empresas_form_desde_request():
+    return {
+        'idempresa': (request.form.get('idempresa') or '').strip(),
+        'ruc': (request.form.get('ruc') or '').strip(),
+        'razon_social': (request.form.get('razon_social') or '').strip(),
+        'direccion': (request.form.get('direccion') or '').strip(),
+        'id_departamento': (request.form.get('id_departamento') or '').strip(),
+        'id_provincia': (request.form.get('id_provincia') or '').strip(),
+        'id_distrito': (request.form.get('id_distrito') or '').strip(),
+        'telefono': (request.form.get('telefono') or '').strip(),
+        'correo': (request.form.get('correo') or '').strip(),
+        'es_cliente': request.form.get('es_cliente'),
+        'es_proveedor': request.form.get('es_proveedor'),
+        'estado': request.form.get('estado'),
+    }
+
+
+def _empresa_a_form(item):
+    es_cli = item.get('escliente')
+    es_prov = item.get('esproveedor')
+    estado = item.get('estado')
+    return {
+        'idempresa': item.get('idempresa'),
+        'ruc': item.get('ruc') or '',
+        'razon_social': item.get('razonsocial') or '',
+        'direccion': item.get('direccion') or '',
+        'id_departamento': item.get('iddepartamento') or '',
+        'id_provincia': item.get('idprovincia') or '',
+        'id_distrito': item.get('iddistrito') or '',
+        'telefono': item.get('telefono') or '',
+        'correo': item.get('correo') or '',
+        'es_cliente': '1' if es_cli else '',
+        'es_proveedor': '1' if es_prov else '',
+        'estado': '1' if estado in (None, True, 1) or str(estado) in ('1', 'True') else '',
+    }
+
+
+@app.route('/configuracion/empresas', methods=['GET'])
+@login_required
+def empresas_page():
+    """Formulario de registro de clientes y proveedores."""
+    ensure_user_session()
+    return render_template('empresas.html', **_empresas_form_context())
+
+
+@app.route('/configuracion/empresas/editar/<int:idempresa>', methods=['GET'])
+@login_required
+def empresas_editar_page(idempresa):
+    """Formulario de edición de una empresa existente."""
+    ensure_user_session()
+    empresa = get_inventario_empresa_por_id(idempresa)
+    if not empresa:
+        flash('Empresa no encontrada.', 'error')
+        return redirect(url_for('lista_empresas_page'))
+    return render_template(
+        'empresas.html',
+        **_empresas_form_context(_empresa_a_form(empresa), modo_edicion=True),
+    )
+
+
+@app.route('/configuracion/empresas/guardar', methods=['POST'])
+@login_required
+def empresas_guardar():
+    """Registra o actualiza una empresa en Inventario_Empresas."""
+    ensure_user_session()
+    form = _empresas_form_desde_request()
+    idempresa = form.get('idempresa') or ''
+
+    if idempresa:
+        ok, msg = actualizar_inventario_empresa(
+            idempresa,
+            form['razon_social'],
+            direccion=form['direccion'],
+            id_departamento=form['id_departamento'],
+            id_provincia=form['id_provincia'],
+            id_distrito=form['id_distrito'],
+            telefono=form['telefono'],
+            correo=form['correo'],
+            es_cliente=form['es_cliente'],
+            es_proveedor=form['es_proveedor'],
+            estado=form['estado'],
+        )
+        modo_edicion = True
+    else:
+        ok, msg = insertar_inventario_empresa(
+            form['ruc'],
+            form['razon_social'],
+            direccion=form['direccion'],
+            id_departamento=form['id_departamento'],
+            id_provincia=form['id_provincia'],
+            id_distrito=form['id_distrito'],
+            telefono=form['telefono'],
+            correo=form['correo'],
+            es_cliente=form['es_cliente'],
+            es_proveedor=form['es_proveedor'],
+            estado=form['estado'],
+        )
+        modo_edicion = False
+
+    if ok:
+        flash(msg, 'success')
+        return redirect(url_for('lista_empresas_page'))
+    flash(msg, 'error')
+    return render_template(
+        'empresas.html',
+        **_empresas_form_context(form, modo_edicion=modo_edicion),
+    )
+
+
+@app.route('/configuracion/empresas/eliminar', methods=['POST'])
+@login_required
+def empresas_eliminar():
+    """Elimina una empresa por IdEmpresa."""
+    ensure_user_session()
+    body = request.get_json(silent=True) or {}
+    idempresa = body.get('idempresa')
+    ok, msg = eliminar_inventario_empresa(idempresa)
+    if ok:
+        return jsonify({'ok': True, 'message': msg})
+    return jsonify({'ok': False, 'error': msg}), 400
+
+
+@app.route('/configuracion/empresas/lista')
+@login_required
+def lista_empresas_page():
+    """Listado y búsqueda de empresas registradas."""
+    ensure_user_session()
+    return render_template('lista_empresas.html')
+
+
+@app.route('/configuracion/empresas/listado', methods=['POST'])
+@login_required
+def lista_empresas_post():
+    """JSON para tabla de empresas."""
+    ensure_user_session()
+    body = request.get_json(silent=True) or {}
+    ruc = str(body.get('ruc') or '').strip()
+    razon = str(body.get('razon_social') or body.get('nombre') or '').strip()
+
+    headers_es = [
+        'RUC',
+        'Razón social',
+        'Teléfono',
+        'Correo',
+        'Cliente',
+        'Proveedor',
+        'Estado',
+        'Ubigeo',
+    ]
+    keys_datos = [
+        'ruc', 'razonsocial', 'telefono', 'correo',
+        'escliente', 'esproveedor', 'estado', 'ubigeo',
+    ]
+
+    try:
+        rows = get_listado_empresas_inventario(ruc, razon)
+        resultado = []
+        ids = []
+        for r in rows:
+            idempresa = r.get('idempresa')
+            if idempresa is None:
+                for k, v in r.items():
+                    if k.lower() == 'idempresa':
+                        idempresa = v
+                        break
+            try:
+                ids.append(int(idempresa))
+            except (TypeError, ValueError):
+                ids.append(None)
+
+            dep = _jsonable_value(r.get('nombredepartamento') or '')
+            prov = _jsonable_value(r.get('nombreprovincia') or '')
+            dist = _jsonable_value(r.get('nombredistrito') or '')
+            partes = [p for p in (dep, prov, dist) if p]
+            ubigeo_txt = ' / '.join(partes) if partes else ''
+
+            es_cli = r.get('escliente')
+            es_prov = r.get('esproveedor')
+            estado_val = r.get('estado')
+
+            fila = [
+                _jsonable_value(r.get('ruc')),
+                _jsonable_value(r.get('razonsocial')),
+                _jsonable_value(r.get('telefono')),
+                _jsonable_value(r.get('correo')),
+                'Sí' if es_cli else 'No',
+                'Sí' if es_prov else 'No',
+                'Activo' if estado_val else 'Inactivo',
+                ubigeo_txt,
+            ]
+            resultado.append(fila)
+        return jsonify({'headers': headers_es, 'data': resultado, 'ids': ids})
+    except Exception as e:
+        logging.exception('lista_empresas_post')
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/selectores/ubigeo/departamentos')
+@login_required
+def api_ubigeo_departamentos():
+    """Departamentos para cascada de ubigeo."""
+    ensure_user_session()
+    rows = get_ubigeo_departamentos()
+    data = [
+        {'id': str(r.get('IdDepartamento', '')).strip(), 'text': str(r.get('NombreDepartamento', '')).strip()}
+        for r in rows
+        if r.get('IdDepartamento')
+    ]
+    return jsonify(data)
+
+
+@app.route('/api/selectores/ubigeo/provincias')
+@login_required
+def api_ubigeo_provincias():
+    """Provincias por departamento."""
+    ensure_user_session()
+    id_dep = (request.args.get('id_departamento') or '').strip()
+    if not id_dep:
+        return jsonify([])
+    rows = get_ubigeo_provincias(id_dep)
+    data = [
+        {'id': str(r.get('IdProvincia', '')).strip(), 'text': str(r.get('NombreProvincia', '')).strip()}
+        for r in rows
+        if r.get('IdProvincia')
+    ]
+    return jsonify(data)
+
+
+@app.route('/api/selectores/ubigeo/distritos')
+@login_required
+def api_ubigeo_distritos():
+    """Distritos por provincia."""
+    ensure_user_session()
+    id_prov = (request.args.get('id_provincia') or '').strip()
+    if not id_prov:
+        return jsonify([])
+    rows = get_ubigeo_distritos(id_prov)
+    data = [
+        {'id': str(r.get('IdDistrito', '')).strip(), 'text': str(r.get('NombreDistrito', '')).strip()}
+        for r in rows
+        if r.get('IdDistrito')
+    ]
+    return jsonify(data)
 
 
 @app.route('/dashboard')

@@ -1,0 +1,270 @@
+{% extends "layout.html" %}
+
+{% block title %}Lista de empresas{% endblock %}
+
+{% block extra_css %}
+<style>
+    .table-scroll-container {
+        max-height: 65vh;
+        overflow: auto;
+        border: 1px solid #dee2e6;
+    }
+
+    .table-lista-empresas {
+        --sticky-col1-w: 7.5rem;
+        font-size: 11px;
+        white-space: nowrap;
+        margin-bottom: 0;
+    }
+
+    .table-lista-empresas th,
+    .table-lista-empresas td {
+        padding: 0.2rem 0.4rem;
+        vertical-align: middle;
+    }
+
+    .table-lista-empresas thead th {
+        position: sticky;
+        top: 0;
+        background-color: #f8f9fa;
+        z-index: 2;
+        box-shadow: 0 1px 0 #dee2e6;
+    }
+
+    .table-lista-empresas .sticky-col-1 {
+        position: sticky;
+        left: 0;
+        z-index: 1;
+        background-color: #fff;
+        min-width: var(--sticky-col1-w);
+        width: var(--sticky-col1-w);
+        max-width: var(--sticky-col1-w);
+        box-sizing: border-box;
+    }
+
+    .table-lista-empresas .sticky-col-2 {
+        position: sticky;
+        left: var(--sticky-col1-w);
+        z-index: 1;
+        background-color: #fff;
+        min-width: 14rem;
+        max-width: 20rem;
+        box-sizing: border-box;
+    }
+
+    .table-lista-empresas thead th.sticky-col-1,
+    .table-lista-empresas thead th.sticky-col-2 {
+        z-index: 3;
+        background-color: #f8f9fa;
+    }
+
+    .table-lista-empresas .col-acciones {
+        min-width: 4.5rem;
+        white-space: nowrap;
+    }
+
+    .table-lista-empresas .acciones-wrap {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.65rem;
+    }
+
+    .table-lista-empresas .accion-icon {
+        border: none;
+        background: none;
+        padding: 0;
+        margin: 0;
+        line-height: 1;
+        font-size: 1rem;
+        cursor: pointer;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .table-lista-empresas .accion-editar { color: #2563eb; }
+    .table-lista-empresas .accion-eliminar { color: #dc3545; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card shadow-sm border-0 mb-4">
+    <div class="card-header bg-white border-bottom-0 pt-4 pb-0">
+        <h5 class="mb-0 fw-bold text-secondary"><i class="bi bi-building"></i> Lista de empresas</h5>
+    </div>
+    <div class="card-body">
+        <form id="frmListaEmpresas" class="row g-2 g-lg-2 align-items-end">
+            <div class="col-12 col-md-4 col-lg-3">
+                <label for="txtRuc" class="form-label small fw-bold text-muted">RUC</label>
+                <input type="text" id="txtRuc" class="form-control form-control-sm" placeholder="Buscar por RUC..." maxlength="20" autocomplete="off">
+            </div>
+            <div class="col-12 col-md-5 col-lg-4">
+                <label for="txtRazon" class="form-label small fw-bold text-muted">Razón social</label>
+                <input type="text" id="txtRazon" class="form-control form-control-sm" placeholder="Buscar por razón social..." maxlength="100" autocomplete="off">
+            </div>
+            <div class="col-12 d-flex align-items-center flex-wrap gap-2 border-top pt-3 mt-3">
+                <button type="submit" class="btn btn-primary btn-sm px-4"><i class="bi bi-search"></i> Consultar</button>
+                <a href="{{ url_for('empresas_page') }}" class="btn btn-outline-primary btn-sm px-4"><i class="bi bi-plus-lg"></i> Nueva empresa</a>
+                <span class="ms-auto text-muted small fw-bold">No. de Registros: <span id="lblRowCountEmpresas">0</span></span>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card shadow-sm border-0 d-none" id="cardResultadoEmpresas">
+    <div class="card-body">
+        <h4 class="text-center fw-bold mb-3">LISTADO DE EMPRESAS</h4>
+        <div class="table-scroll-container">
+            <table class="table table-bordered table-sm table-hover table-lista-empresas align-middle">
+                <thead id="thead-empresas"></thead>
+                <tbody id="tbody-empresas"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', async function () {
+    const URL_REPORTE = {{ url_for('lista_empresas_post') | tojson }};
+    const URL_ELIMINAR = {{ url_for('empresas_eliminar') | tojson }};
+    const URL_EDITAR_BASE = {{ url_for('empresas_editar_page', idempresa=0) | tojson }}.replace(/0$/, '');
+    const IDX_STICKY_1 = 0;
+    const IDX_STICKY_2 = 1;
+
+    function escapeHtml(s) {
+        return String(s || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    function fmtCelda(valor) {
+        if (valor === null || valor === undefined) return '';
+        return String(valor);
+    }
+
+    function urlEditar(idempresa) {
+        return URL_EDITAR_BASE + String(idempresa);
+    }
+
+    async function eliminarEmpresa(idempresa, ruc) {
+        const etiqueta = ruc ? `«${ruc}»` : 'esta empresa';
+        if (!window.confirm(`¿Está seguro de eliminar ${etiqueta}? Esta acción no se puede deshacer.`)) {
+            return;
+        }
+        try {
+            const res = await fetch(URL_ELIMINAR, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ idempresa: idempresa })
+            });
+            const payload = await res.json();
+            if (!res.ok || !payload.ok) {
+                alert(payload.error || 'No se pudo eliminar la empresa.');
+                return;
+            }
+            await ejecutarConsultaEmpresas();
+        } catch (e) {
+            console.error(e);
+            alert('Error de red o del servidor al eliminar.');
+        }
+    }
+
+    function renderizarTabla(response) {
+        const thead = document.getElementById('thead-empresas');
+        const tbody = document.getElementById('tbody-empresas');
+        const headers = response.headers || [];
+        const ids = response.ids || [];
+
+        let htmlHeaders = '<tr>';
+        headers.forEach((header, index) => {
+            let sticky = '';
+            if (index === IDX_STICKY_1) sticky = 'sticky-col-1';
+            else if (index === IDX_STICKY_2) sticky = 'sticky-col-2';
+            htmlHeaders += `<th class="${sticky}">${escapeHtml(header)}</th>`;
+        });
+        htmlHeaders += '<th class="text-center col-acciones">Acciones</th></tr>';
+        thead.innerHTML = htmlHeaders;
+
+        const filas = response.data || [];
+        let htmlBody = '';
+        filas.forEach((rowVals, rowIndex) => {
+            const idempresa = ids[rowIndex];
+            const ruc = rowVals && rowVals[IDX_STICKY_1] != null ? String(rowVals[IDX_STICKY_1]) : '';
+            htmlBody += '<tr>';
+            (rowVals || []).forEach((valor, index) => {
+                let sticky = '';
+                if (index === IDX_STICKY_1) sticky = 'sticky-col-1 font-monospace fw-bold';
+                else if (index === IDX_STICKY_2) sticky = 'sticky-col-2 text-truncate';
+                htmlBody += `<td class="${sticky}">${escapeHtml(fmtCelda(valor))}</td>`;
+            });
+            if (idempresa != null && idempresa !== '') {
+                htmlBody += `<td class="col-acciones text-center">
+                    <span class="acciones-wrap">
+                        <a href="${escapeHtml(urlEditar(idempresa))}" class="accion-icon accion-editar" title="Editar">
+                            <i class="bi bi-pencil" aria-hidden="true"></i>
+                        </a>
+                        <button type="button" class="accion-icon accion-eliminar btn-eliminar-empresa"
+                                data-idempresa="${escapeHtml(String(idempresa))}" data-ruc="${escapeHtml(ruc)}" title="Eliminar">
+                            <i class="bi bi-trash" aria-hidden="true"></i>
+                        </button>
+                    </span>
+                </td>`;
+            } else {
+                htmlBody += '<td class="col-acciones text-center text-muted">—</td>';
+            }
+            htmlBody += '</tr>';
+        });
+
+        tbody.innerHTML = htmlBody;
+        tbody.querySelectorAll('.btn-eliminar-empresa').forEach((btn) => {
+            btn.addEventListener('click', function () {
+                const id = parseInt(this.getAttribute('data-idempresa'), 10);
+                const rucVal = this.getAttribute('data-ruc') || '';
+                if (!Number.isFinite(id)) return;
+                eliminarEmpresa(id, rucVal);
+            });
+        });
+        document.getElementById('lblRowCountEmpresas').textContent = String(filas.length);
+    }
+
+    async function ejecutarConsultaEmpresas() {
+        const ruc = document.getElementById('txtRuc').value.trim();
+        const razon = document.getElementById('txtRazon').value.trim();
+
+        try {
+            const res = await fetch(URL_REPORTE, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ruc: ruc, razon_social: razon })
+            });
+            const payload = await res.json();
+            if (!res.ok || payload.error) {
+                document.getElementById('cardResultadoEmpresas').classList.add('d-none');
+                document.getElementById('lblRowCountEmpresas').textContent = '0';
+                alert(payload.error || 'Error al consultar el listado.');
+                return;
+            }
+            document.getElementById('cardResultadoEmpresas').classList.remove('d-none');
+            renderizarTabla(payload);
+        } catch (e) {
+            console.error(e);
+            document.getElementById('cardResultadoEmpresas').classList.add('d-none');
+            document.getElementById('lblRowCountEmpresas').textContent = '0';
+            alert('Error de red o del servidor.');
+        }
+    }
+
+    document.getElementById('frmListaEmpresas').addEventListener('submit', async function (e) {
+        e.preventDefault();
+        await ejecutarConsultaEmpresas();
+    });
+
+    await ejecutarConsultaEmpresas();
+});
+</script>
+{% endblock %}
