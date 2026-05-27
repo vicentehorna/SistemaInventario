@@ -2,6 +2,7 @@ import logging
 import os
 import pyodbc
 import platform
+from datetime import datetime
 from flask_login import UserMixin
 from dotenv import load_dotenv
 
@@ -2010,6 +2011,7 @@ def insertar_inventario_item(
     aplicacion=None,
     codigo_bomba=None,
     stock_inicial=0,
+    xlastuser=None,
 ):
     """
     Registra un artículo en Inventario_Items.
@@ -2040,9 +2042,10 @@ def insertar_inventario_item(
             """
             INSERT INTO dbo.Inventario_Items (
                 Codigo, IdCategoria, IdMarca, Descripcion,
-                Aplicacion, CodigoBomba, StockActual
+                Aplicacion, CodigoBomba, StockActual,
+                xlastuser, xlastdate
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, GETDATE())
             """,
             (
                 codigo,
@@ -2052,6 +2055,7 @@ def insertar_inventario_item(
                 (aplicacion or "").strip() or None,
                 (codigo_bomba or "").strip() or None,
                 stock,
+                (xlastuser or "").strip()[:20] or None,
             ),
         )
         conn.commit()
@@ -2128,6 +2132,7 @@ def actualizar_inventario_item(
     aplicacion=None,
     codigo_bomba=None,
     stock_actual=0,
+    xlastuser=None,
 ):
     """Actualiza un artículo (el código no se modifica)."""
     conn = None
@@ -2154,7 +2159,8 @@ def actualizar_inventario_item(
             """
             UPDATE dbo.Inventario_Items
             SET IdCategoria = ?, IdMarca = ?, Descripcion = ?,
-                Aplicacion = ?, CodigoBomba = ?, StockActual = ?
+                Aplicacion = ?, CodigoBomba = ?, StockActual = ?,
+                xlastuser = ?, xlastdate = GETDATE()
             WHERE IdItem = ?
             """,
             (
@@ -2164,6 +2170,7 @@ def actualizar_inventario_item(
                 (aplicacion or "").strip() or None,
                 (codigo_bomba or "").strip() or None,
                 stock,
+                (xlastuser or "").strip()[:20] or None,
                 iditem,
             ),
         )
@@ -2673,6 +2680,600 @@ def get_listado_empresas_inventario(ruc='', razon_social=''):
     except Exception as e:
         _logger_db.exception("get_listado_empresas_inventario: %s", e)
         raise
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def get_proveedores_activos():
+    """Proveedores activos para selector de compras."""
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT IdEmpresa, RUC, RazonSocial
+            FROM dbo.Inventario_Empresas
+            WHERE EsProveedor = 1 AND Estado = 1
+            ORDER BY RazonSocial
+            """
+        )
+        columns = [col[0] for col in cursor.description]
+        rows = []
+        for row in cursor.fetchall():
+            item = {col: val for col, val in zip(columns, row)}
+            rows.append({k.lower(): v for k, v in item.items()})
+        cursor.close()
+        return rows
+    except Exception as e:
+        _logger_db.exception("get_proveedores_activos: %s", e)
+        return []
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def get_articulos_para_compra():
+    """Artículos para líneas de detalle en compras."""
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT IdItem, Codigo, Descripcion
+            FROM dbo.Inventario_Items
+            ORDER BY Descripcion, Codigo
+            """
+        )
+        columns = [col[0] for col in cursor.description]
+        rows = []
+        for row in cursor.fetchall():
+            item = {col: val for col, val in zip(columns, row)}
+            rows.append({k.lower(): v for k, v in item.items()})
+        cursor.close()
+        return rows
+    except Exception as e:
+        _logger_db.exception("get_articulos_para_compra: %s", e)
+        return []
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def get_lista_compras_inventario(codigo='', articulo='', proveedor=0):
+    """Ejecuta sp_inv_lista_compras con filtros."""
+    conn = None
+    codigo_s = (codigo or '').strip()
+    articulo_s = (articulo or '').strip()
+    try:
+        proveedor_i = int(proveedor or 0)
+    except (TypeError, ValueError):
+        proveedor_i = 0
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "EXEC sp_inv_lista_compras @codigo=?, @articulo=?, @proveedor=?",
+            (codigo_s, articulo_s, proveedor_i),
+        )
+        columns = [col[0] for col in cursor.description]
+        rows = []
+        for row in cursor.fetchall():
+            item = {col: val for col, val in zip(columns, row)}
+            rows.append({k.lower(): v for k, v in item.items()})
+        cursor.close()
+        return rows
+    except Exception as e:
+        _logger_db.exception("get_lista_compras_inventario: %s", e)
+        raise
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def get_compra_por_id(id_compra):
+    """Obtiene cabecera y detalle de una compra para edición."""
+    conn = None
+    try:
+        id_compra_i = int(id_compra)
+    except (TypeError, ValueError):
+        return None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT
+                c.IdCompra, c.IdProveedor, c.FechaCompra, c.TipoComprobante, c.NroComprobanteRef,
+                c.IncluyeIGV, c.EstadoPago, c.EstadoCompra
+            FROM dbo.Inventario_ComprasCab c
+            WHERE c.IdCompra = ?
+            """,
+            (id_compra_i,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            cursor.close()
+            return None
+        columns = [col[0] for col in cursor.description]
+        cab = {k.lower(): v for k, v in dict(zip(columns, row)).items()}
+
+        cursor.execute(
+            """
+            SELECT
+                d.IdItem, i.Codigo, i.Descripcion, d.Cantidad, d.PrecioUnitario, d.TotalLinea
+            FROM dbo.Inventario_ComprasDet d
+            INNER JOIN dbo.Inventario_Items i ON d.IdItem = i.IdItem
+            WHERE d.IdCompra = ?
+            ORDER BY d.IdCompraDet
+            """,
+            (id_compra_i,),
+        )
+        det_cols = [col[0] for col in cursor.description]
+        detalles = []
+        for det in cursor.fetchall():
+            item = {k.lower(): v for k, v in dict(zip(det_cols, det)).items()}
+            detalles.append(item)
+        cursor.close()
+        cab['detalles'] = detalles
+        return cab
+    except Exception as e:
+        _logger_db.exception("get_compra_por_id: %s", e)
+        return None
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def _calcular_totales_compra(detalles, incluye_igv):
+    """Calcula subtotal, IGV y total a partir de líneas de detalle."""
+    from decimal import Decimal, ROUND_HALF_UP
+
+    suma_lineas = Decimal('0')
+    for d in detalles:
+        cantidad = int(d['cantidad'])
+        precio = Decimal(str(d['precio_unitario']))
+        suma_lineas += Decimal(cantidad) * precio
+
+    total = suma_lineas.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    if incluye_igv:
+        subtotal = (total / Decimal('1.18')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        igv = (total - subtotal).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    else:
+        subtotal = total
+        igv = Decimal('0.00')
+    return subtotal, igv, total
+
+
+def insertar_compra(
+    id_proveedor,
+    fecha_compra,
+    tipo_comprobante,
+    nro_comprobante_ref,
+    incluye_igv,
+    estado_pago,
+    detalles,
+):
+    """
+    Registra cabecera y detalle de compra; incrementa stock por cada línea.
+    detalles: lista de dicts con id_item, cantidad, precio_unitario.
+    """
+    from decimal import Decimal, ROUND_HALF_UP
+
+    if not detalles:
+        return False, "Debe agregar al menos un artículo al detalle."
+
+    try:
+        id_proveedor = int(id_proveedor)
+    except (TypeError, ValueError):
+        return False, "Proveedor no válido."
+
+    tipos_ok = ('FACTURA', 'BOLETA', 'NOTA_VENTA', 'NINGUNO')
+    tipo = (tipo_comprobante or '').strip().upper()
+    if tipo not in tipos_ok:
+        return False, "Tipo de comprobante no válido."
+
+    estado_pago_val = (estado_pago or 'PENDIENTE').strip().upper()
+    if estado_pago_val not in ('PENDIENTE', 'CANCELADO'):
+        return False, "Estado de pago no válido."
+
+    lineas = []
+    for d in detalles:
+        try:
+            id_item = int(d.get('id_item') or d.get('idItem'))
+            cantidad = int(d.get('cantidad'))
+            precio_unitario = Decimal(str(d.get('precio_unitario') or d.get('precioUnitario')))
+        except (TypeError, ValueError, ArithmeticError):
+            return False, "Línea de detalle con datos inválidos."
+        if cantidad <= 0:
+            return False, "La cantidad debe ser mayor a cero."
+        if precio_unitario <= 0:
+            return False, "El precio unitario debe ser mayor a cero."
+        total_linea = (Decimal(cantidad) * precio_unitario).quantize(
+            Decimal('0.01'), rounding=ROUND_HALF_UP
+        )
+        lineas.append({
+            'id_item': id_item,
+            'cantidad': cantidad,
+            'precio_unitario': precio_unitario,
+            'total_linea': total_linea,
+        })
+
+    incluye = bool(incluye_igv)
+    subtotal, igv, total = _calcular_totales_compra(lineas, incluye)
+
+    if isinstance(fecha_compra, str):
+        fecha_compra = fecha_compra.strip()[:10]
+    try:
+        partes = fecha_compra.split('-')
+        fecha_dt = datetime(int(partes[0]), int(partes[1]), int(partes[2]))
+    except (ValueError, IndexError, AttributeError):
+        return False, "Fecha de compra no válida."
+
+    nro_ref = (nro_comprobante_ref or '').strip() or None
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            "SELECT 1 FROM dbo.Inventario_Empresas WHERE IdEmpresa = ? AND EsProveedor = 1",
+            (id_proveedor,),
+        )
+        if not cursor.fetchone():
+            cursor.close()
+            return False, "El proveedor seleccionado no existe o no es proveedor."
+
+        cursor.execute(
+            """
+            INSERT INTO dbo.Inventario_ComprasCab (
+                IdProveedor, FechaCompra, TipoComprobante, NroComprobanteRef,
+                IncluyeIGV, SubTotal, IGV, Total,
+                EstadoCompra, EstadoPago
+            )
+            OUTPUT INSERTED.IdCompra
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVA', ?)
+            """,
+            (
+                id_proveedor,
+                fecha_dt,
+                tipo,
+                nro_ref,
+                1 if incluye else 0,
+                float(subtotal),
+                float(igv),
+                float(total),
+                estado_pago_val,
+            ),
+        )
+        row = cursor.fetchone()
+        if not row:
+            conn.rollback()
+            return False, "No se pudo registrar la compra."
+        id_compra = int(row[0])
+
+        for ln in lineas:
+            cursor.execute(
+                "SELECT 1 FROM dbo.Inventario_Items WHERE IdItem = ?",
+                (ln['id_item'],),
+            )
+            if not cursor.fetchone():
+                conn.rollback()
+                return False, f"Artículo IdItem {ln['id_item']} no encontrado."
+
+            cursor.execute(
+                """
+                INSERT INTO dbo.Inventario_ComprasDet (
+                    IdCompra, IdItem, Cantidad, PrecioUnitario, TotalLinea
+                )
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    id_compra,
+                    ln['id_item'],
+                    ln['cantidad'],
+                    float(ln['precio_unitario']),
+                    float(ln['total_linea']),
+                ),
+            )
+            cursor.execute(
+                """
+                UPDATE dbo.Inventario_Items
+                SET StockActual = StockActual + ?
+                WHERE IdItem = ?
+                """,
+                (ln['cantidad'], ln['id_item']),
+            )
+
+        conn.commit()
+        cursor.close()
+        return True, f"Compra registrada correctamente (N° {id_compra}). Stock actualizado."
+    except Exception as e:
+        _logger_db.exception("insertar_compra: %s", e)
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        err = str(e).lower()
+        if 'invalid object name' in err and 'compras' in err:
+            return False, (
+                "Las tablas de compras no existen en la base de datos. "
+                "Ejecute el script sql/Inventario_Compras.sql."
+            )
+        return False, "Error al registrar la compra. Verifique los datos e intente nuevamente."
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def actualizar_compra(
+    id_compra,
+    id_proveedor,
+    fecha_compra,
+    tipo_comprobante,
+    nro_comprobante_ref,
+    incluye_igv,
+    estado_pago,
+    detalles,
+):
+    """Actualiza compra activa, recalcula detalle y ajusta stock."""
+    from decimal import Decimal, ROUND_HALF_UP
+
+    if not detalles:
+        return False, "Debe agregar al menos un artículo al detalle."
+    try:
+        id_compra = int(id_compra)
+        id_proveedor = int(id_proveedor)
+    except (TypeError, ValueError):
+        return False, "Compra o proveedor no válido."
+
+    tipos_ok = ('FACTURA', 'BOLETA', 'NOTA_VENTA', 'NINGUNO')
+    tipo = (tipo_comprobante or '').strip().upper()
+    if tipo not in tipos_ok:
+        return False, "Tipo de comprobante no válido."
+    estado_pago_val = (estado_pago or 'PENDIENTE').strip().upper()
+    if estado_pago_val not in ('PENDIENTE', 'CANCELADO'):
+        return False, "Estado de pago no válido."
+
+    lineas = []
+    for d in detalles:
+        try:
+            id_item = int(d.get('id_item') or d.get('idItem'))
+            cantidad = int(d.get('cantidad'))
+            precio_unitario = Decimal(str(d.get('precio_unitario') or d.get('precioUnitario')))
+        except (TypeError, ValueError, ArithmeticError):
+            return False, "Línea de detalle con datos inválidos."
+        if cantidad <= 0 or precio_unitario <= 0:
+            return False, "Cantidad y precio unitario deben ser mayores a cero."
+        total_linea = (Decimal(cantidad) * precio_unitario).quantize(
+            Decimal('0.01'), rounding=ROUND_HALF_UP
+        )
+        lineas.append({
+            'id_item': id_item,
+            'cantidad': cantidad,
+            'precio_unitario': precio_unitario,
+            'total_linea': total_linea,
+        })
+
+    incluye = bool(incluye_igv)
+    subtotal, igv, total = _calcular_totales_compra(lineas, incluye)
+
+    if isinstance(fecha_compra, str):
+        fecha_compra = fecha_compra.strip()[:10]
+    try:
+        partes = fecha_compra.split('-')
+        fecha_dt = datetime(int(partes[0]), int(partes[1]), int(partes[2]))
+    except (ValueError, IndexError, AttributeError):
+        return False, "Fecha de compra no válida."
+
+    nro_ref = (nro_comprobante_ref or '').strip() or None
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT EstadoCompra
+            FROM dbo.Inventario_ComprasCab
+            WHERE IdCompra = ?
+            """,
+            (id_compra,),
+        )
+        row_compra = cursor.fetchone()
+        if not row_compra:
+            cursor.close()
+            return False, "La compra no existe."
+        if str(row_compra[0] or '').strip().upper() == 'ANULADA':
+            cursor.close()
+            return False, "No se puede editar una compra anulada."
+
+        cursor.execute(
+            "SELECT 1 FROM dbo.Inventario_Empresas WHERE IdEmpresa = ? AND EsProveedor = 1",
+            (id_proveedor,),
+        )
+        if not cursor.fetchone():
+            cursor.close()
+            return False, "El proveedor seleccionado no existe o no es proveedor."
+
+        cursor.execute(
+            "SELECT IdItem, Cantidad FROM dbo.Inventario_ComprasDet WHERE IdCompra = ?",
+            (id_compra,),
+        )
+        old_det = cursor.fetchall()
+        for od in old_det:
+            od_item = int(od[0])
+            od_qty = int(od[1] or 0)
+            if od_qty <= 0:
+                continue
+            cursor.execute(
+                """
+                UPDATE dbo.Inventario_Items
+                SET StockActual = StockActual - ?
+                WHERE IdItem = ? AND StockActual >= ?
+                """,
+                (od_qty, od_item, od_qty),
+            )
+            if cursor.rowcount == 0:
+                conn.rollback()
+                cursor.close()
+                return False, "No hay stock suficiente para recalcular la edición de compra."
+
+        cursor.execute("DELETE FROM dbo.Inventario_ComprasDet WHERE IdCompra = ?", (id_compra,))
+
+        cursor.execute(
+            """
+            UPDATE dbo.Inventario_ComprasCab
+            SET IdProveedor = ?, FechaCompra = ?, TipoComprobante = ?, NroComprobanteRef = ?,
+                IncluyeIGV = ?, SubTotal = ?, IGV = ?, Total = ?, EstadoPago = ?
+            WHERE IdCompra = ?
+            """,
+            (
+                id_proveedor,
+                fecha_dt,
+                tipo,
+                nro_ref,
+                1 if incluye else 0,
+                float(subtotal),
+                float(igv),
+                float(total),
+                estado_pago_val,
+                id_compra,
+            ),
+        )
+
+        for ln in lineas:
+            cursor.execute("SELECT 1 FROM dbo.Inventario_Items WHERE IdItem = ?", (ln['id_item'],))
+            if not cursor.fetchone():
+                conn.rollback()
+                cursor.close()
+                return False, f"Artículo IdItem {ln['id_item']} no encontrado."
+            cursor.execute(
+                """
+                INSERT INTO dbo.Inventario_ComprasDet (
+                    IdCompra, IdItem, Cantidad, PrecioUnitario, TotalLinea
+                )
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    id_compra,
+                    ln['id_item'],
+                    ln['cantidad'],
+                    float(ln['precio_unitario']),
+                    float(ln['total_linea']),
+                ),
+            )
+            cursor.execute(
+                """
+                UPDATE dbo.Inventario_Items
+                SET StockActual = StockActual + ?
+                WHERE IdItem = ?
+                """,
+                (ln['cantidad'], ln['id_item']),
+            )
+
+        conn.commit()
+        cursor.close()
+        return True, f"Compra actualizada correctamente (N° {id_compra})."
+    except Exception as e:
+        _logger_db.exception("actualizar_compra: %s", e)
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        return False, "Error al actualizar la compra."
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def anular_compra(id_compra):
+    """Anula una compra activa y revierte stock del detalle."""
+    conn = None
+    try:
+        id_compra = int(id_compra)
+    except (TypeError, ValueError):
+        return False, "Compra no válida."
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT EstadoCompra FROM dbo.Inventario_ComprasCab WHERE IdCompra = ?",
+            (id_compra,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            cursor.close()
+            return False, "La compra no existe."
+        estado = str(row[0] or '').strip().upper()
+        if estado == 'ANULADA':
+            cursor.close()
+            return False, "La compra ya está anulada."
+
+        cursor.execute(
+            "SELECT IdItem, Cantidad FROM dbo.Inventario_ComprasDet WHERE IdCompra = ?",
+            (id_compra,),
+        )
+        detalles = cursor.fetchall()
+        for det in detalles:
+            id_item = int(det[0])
+            cantidad = int(det[1] or 0)
+            if cantidad <= 0:
+                continue
+            cursor.execute(
+                """
+                UPDATE dbo.Inventario_Items
+                SET StockActual = StockActual - ?
+                WHERE IdItem = ? AND StockActual >= ?
+                """,
+                (cantidad, id_item, cantidad),
+            )
+            if cursor.rowcount == 0:
+                conn.rollback()
+                cursor.close()
+                return False, "No hay stock suficiente para revertir la compra."
+
+        cursor.execute(
+            "UPDATE dbo.Inventario_ComprasCab SET EstadoCompra = 'ANULADA' WHERE IdCompra = ?",
+            (id_compra,),
+        )
+        conn.commit()
+        cursor.close()
+        return True, f"Compra N° {id_compra} anulada correctamente."
+    except Exception as e:
+        _logger_db.exception("anular_compra: %s", e)
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        return False, "Error al anular la compra."
     finally:
         if conn:
             try:

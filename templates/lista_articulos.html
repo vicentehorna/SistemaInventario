@@ -96,6 +96,12 @@
     .table-lista-articulos .accion-eliminar {
         color: #dc3545;
     }
+
+    .table-lista-articulos .stock-highlight {
+        background-color: #ecfdf3;
+        color: #166534;
+        font-weight: 700;
+    }
 </style>
 {% endblock %}
 
@@ -224,10 +230,11 @@ document.addEventListener('DOMContentLoaded', async function () {
                 else if (index === IDX_STICKY_2) sticky = 'sticky-col-2 text-truncate';
                 const isNum = typeof valor === 'number' && Number.isFinite(valor);
                 const align = index === IDX_STOCK ? 'text-end' : '';
+                const stockClass = index === IDX_STOCK ? 'stock-highlight' : '';
                 const txt = isNum && index === IDX_STOCK
                     ? fmtCelda(valor, { entero: true })
                     : isNum ? fmtCelda(valor) : escapeHtml(fmtCelda(valor));
-                htmlBody += `<td class="${[sticky, align].filter(Boolean).join(' ')}">${txt}</td>`;
+                htmlBody += `<td class="${[sticky, align, stockClass].filter(Boolean).join(' ')}">${txt}</td>`;
             });
             if (iditem != null && iditem !== '') {
                 htmlBody += `<td class="col-acciones text-center">

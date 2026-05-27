@@ -78,6 +78,13 @@ from database import (
     actualizar_inventario_empresa,
     eliminar_inventario_empresa,
     get_listado_empresas_inventario,
+    get_proveedores_activos,
+    get_articulos_para_compra,
+    get_lista_compras_inventario,
+    insertar_compra,
+    get_compra_por_id,
+    actualizar_compra,
+    anular_compra,
 )
 
 load_dotenv()
@@ -1171,6 +1178,7 @@ def articulos_guardar():
     ensure_user_session()
     form = _articulos_form_desde_request()
     iditem = form.get('iditem') or ''
+    usuario_auditoria = (getattr(current_user, 'nombre', None) or getattr(current_user, 'username', '') or '').strip()
 
     if iditem:
         ok, msg = actualizar_inventario_item(
@@ -1181,6 +1189,7 @@ def articulos_guardar():
             aplicacion=form['aplicacion'],
             codigo_bomba=form['codigo_bomba'],
             stock_actual=form['stock_inicial'],
+            xlastuser=usuario_auditoria,
         )
         modo_edicion = True
     else:
@@ -1192,6 +1201,7 @@ def articulos_guardar():
             aplicacion=form['aplicacion'],
             codigo_bomba=form['codigo_bomba'],
             stock_inicial=form['stock_inicial'],
+            xlastuser=usuario_auditoria,
         )
         modo_edicion = False
 
@@ -1486,6 +1496,209 @@ def lista_empresas_post():
     except Exception as e:
         logging.exception('lista_empresas_post')
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/operaciones/compras/registro', methods=['GET'])
+@login_required
+def compras_registro_page():
+    """Formulario de registro de compras a proveedores (ingreso a almacén)."""
+    ensure_user_session()
+    return render_template(
+        'compras_registro.html',
+        proveedores=get_proveedores_activos(),
+        articulos=get_articulos_para_compra(),
+        fecha_actual=date.today().isoformat(),
+    )
+
+
+@app.route('/operaciones/compras/guardar', methods=['POST'])
+@login_required
+def compras_guardar():
+    """Guarda cabecera y detalle de compra; actualiza stock."""
+    ensure_user_session()
+    id_compra = request.form.get('id_compra')
+    id_proveedor = request.form.get('id_proveedor')
+    fecha_compra = request.form.get('fecha_compra')
+    tipo_comprobante = request.form.get('tipo_comprobante')
+    nro_comprobante_ref = request.form.get('nro_comprobante_ref')
+    incluye_igv = request.form.get('incluye_igv') in ('on', '1', 'true', 'True')
+    estado_pago = request.form.get('estado_pago')
+
+    detalles_raw = request.form.get('detalles_json', '[]')
+    try:
+        detalles = json.loads(detalles_raw) if detalles_raw else []
+    except json.JSONDecodeError:
+        detalles = []
+
+    if not isinstance(detalles, list):
+        detalles = []
+
+    if id_compra:
+        ok, msg = actualizar_compra(
+            id_compra,
+            id_proveedor,
+            fecha_compra,
+            tipo_comprobante,
+            nro_comprobante_ref,
+            incluye_igv,
+            estado_pago,
+            detalles,
+        )
+    else:
+        ok, msg = insertar_compra(
+            id_proveedor,
+            fecha_compra,
+            tipo_comprobante,
+            nro_comprobante_ref,
+            incluye_igv,
+            estado_pago,
+            detalles,
+        )
+
+    if ok:
+        flash(msg, 'success')
+        return redirect(url_for('lista_compras_page'))
+
+    flash(msg, 'error')
+    return render_template(
+        'compras_registro.html',
+        proveedores=get_proveedores_activos(),
+        articulos=get_articulos_para_compra(),
+        fecha_actual=fecha_compra or date.today().isoformat(),
+        form_preservado={
+            'id_compra': id_compra,
+            'id_proveedor': id_proveedor,
+            'fecha_compra': fecha_compra,
+            'tipo_comprobante': tipo_comprobante,
+            'nro_comprobante_ref': nro_comprobante_ref,
+            'incluye_igv': incluye_igv,
+            'estado_pago': estado_pago,
+            'detalles_json': detalles_raw,
+        },
+    )
+
+
+@app.route('/operaciones/compras/editar/<int:id_compra>', methods=['GET'])
+@login_required
+def compras_editar_page(id_compra):
+    """Formulario de compras en modo edición."""
+    ensure_user_session()
+    compra = get_compra_por_id(id_compra)
+    if not compra:
+        flash('Compra no encontrada.', 'error')
+        return redirect(url_for('lista_compras_page'))
+    if str(compra.get('estadocompra') or '').upper() == 'ANULADA':
+        flash('No se puede editar una compra anulada.', 'error')
+        return redirect(url_for('lista_compras_page'))
+
+    fecha_compra = compra.get('fechacompra')
+    fecha_form = date.today().isoformat()
+    if hasattr(fecha_compra, 'strftime'):
+        fecha_form = fecha_compra.strftime('%Y-%m-%d')
+    elif isinstance(fecha_compra, str) and fecha_compra:
+        fecha_form = fecha_compra[:10]
+
+    detalles_json = json.dumps([
+        {
+            'id_item': d.get('iditem'),
+            'cantidad': d.get('cantidad'),
+            'precio_unitario': float(d.get('preciounitario') or 0),
+        }
+        for d in (compra.get('detalles') or [])
+    ])
+
+    return render_template(
+        'compras_registro.html',
+        proveedores=get_proveedores_activos(),
+        articulos=get_articulos_para_compra(),
+        fecha_actual=fecha_form,
+        form_preservado={
+            'id_compra': compra.get('idcompra'),
+            'id_proveedor': compra.get('idproveedor'),
+            'fecha_compra': fecha_form,
+            'tipo_comprobante': compra.get('tipocomprobante') or 'FACTURA',
+            'nro_comprobante_ref': compra.get('nrocomprobanteref') or '',
+            'incluye_igv': bool(compra.get('incluyeigv')),
+            'estado_pago': compra.get('estadopago') or 'PENDIENTE',
+            'detalles_json': detalles_json,
+            'modo_edicion': True,
+        },
+    )
+
+
+@app.route('/operaciones/compras/lista', methods=['GET'])
+@login_required
+def lista_compras_page():
+    """Vista de listado de compras."""
+    ensure_user_session()
+    return render_template('lista_compras.html', proveedores=get_proveedores_activos())
+
+
+@app.route('/operaciones/compras/listado', methods=['POST'])
+@login_required
+def lista_compras_post():
+    """JSON de compras usando sp_inv_lista_compras."""
+    ensure_user_session()
+    body = request.get_json(silent=True) or {}
+    codigo = str(body.get('codigo') or '').strip()
+    articulo = str(body.get('articulo') or body.get('item') or '').strip()
+    try:
+        proveedor = int(body.get('proveedor') or 0)
+    except (TypeError, ValueError):
+        proveedor = 0
+
+    headers_es = [
+        'Proveedor',
+        'Fecha compra',
+        'Estado compra',
+        'Estado pago',
+        'Código',
+        'Artículo',
+        'Precio unitario',
+        'Cantidad',
+        'Total línea',
+    ]
+
+    try:
+        rows = get_lista_compras_inventario(codigo, articulo, proveedor)
+        data = []
+        ids = []
+        for r in rows:
+            id_compra = r.get('idcompra')
+            try:
+                ids.append(int(id_compra))
+            except (TypeError, ValueError):
+                ids.append(None)
+
+            fila = [
+                _jsonable_value(r.get('razonsocial')),
+                _jsonable_value(r.get('fechacompra')),
+                _jsonable_value(r.get('estadocompra')),
+                _jsonable_value(r.get('estadopago')),
+                _jsonable_value(r.get('codigo')),
+                _jsonable_value(r.get('descripcion')),
+                _jsonable_value(r.get('preciounitario')),
+                _jsonable_value(r.get('cantidad')),
+                _jsonable_value(r.get('totallinea')),
+            ]
+            data.append(fila)
+        return jsonify({'headers': headers_es, 'data': data, 'ids': ids})
+    except Exception as e:
+        logging.exception('lista_compras_post')
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/operaciones/compras/anular', methods=['POST'])
+@login_required
+def compras_anular():
+    """Anula compra y revierte stock."""
+    ensure_user_session()
+    body = request.get_json(silent=True) or {}
+    id_compra = body.get('id_compra')
+    ok, msg = anular_compra(id_compra)
+    if ok:
+        return jsonify({'ok': True, 'message': msg})
+    return jsonify({'ok': False, 'error': msg}), 400
 
 
 @app.route('/api/selectores/ubigeo/departamentos')

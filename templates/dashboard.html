@@ -86,7 +86,7 @@
 {% block content %}
 <div class="dash-inventario-welcome">
     <h2 class="mb-0">Bienvenido{% if nombre_bienvenida %}, {{ nombre_bienvenida }}{% endif %}</h2>
-    <p>Seleccione una opción para gestionar artículos, empresas y el inventario.</p>
+    <p>Seleccione una opción para gestionar artículos, empresas, compras e inventario.</p>
 </div>
 
 <section aria-labelledby="titulo-modulos-inventario">
@@ -126,6 +126,24 @@
                 </span>
                 <h3>Lista de empresas</h3>
                 <p>Consulte, busque, edite o elimine clientes y proveedores registrados.</p>
+            </a>
+        </div>
+        <div class="col-12 col-md-6 col-lg-5">
+            <a class="dash-module-card" href="{{ url_for('compras_registro_page') }}" title="Registro de Compras">
+                <span class="dash-module-card-icon" aria-hidden="true">
+                    <i class="bi bi-cart-plus"></i>
+                </span>
+                <h3>Registro de Compras</h3>
+                <p>Registre compras a proveedores y actualice automáticamente el stock en almacén.</p>
+            </a>
+        </div>
+        <div class="col-12 col-md-6 col-lg-5">
+            <a class="dash-module-card" href="{{ url_for('lista_compras_page') }}" title="Lista de Compras">
+                <span class="dash-module-card-icon" aria-hidden="true">
+                    <i class="bi bi-card-list"></i>
+                </span>
+                <h3>Lista de Compras</h3>
+                <p>Consulte compras registradas, edite documentos activos o anule con control de stock.</p>
             </a>
         </div>
     </div>
