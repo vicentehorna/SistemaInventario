@@ -1,0 +1,354 @@
+{% extends "layout.html" %}
+
+{% block title %}Lista de Ventas{% endblock %}
+
+{% block extra_css %}
+<style>
+    .table-scroll-container {
+        max-height: 65vh;
+        overflow: auto;
+        border: 1px solid #dee2e6;
+    }
+
+    .table-lista-ventas {
+        font-size: 11px;
+        white-space: nowrap;
+        margin-bottom: 0;
+    }
+
+    .table-lista-ventas th,
+    .table-lista-ventas td {
+        padding: 0.25rem 0.45rem;
+        vertical-align: middle;
+    }
+
+    .table-lista-ventas thead th {
+        position: sticky;
+        top: 0;
+        background-color: #f8f9fa;
+        z-index: 2;
+        box-shadow: 0 1px 0 #dee2e6;
+    }
+
+    .table-lista-ventas .acciones-wrap {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.65rem;
+    }
+
+    .table-lista-ventas .accion-icon {
+        border: none;
+        background: none;
+        padding: 0;
+        margin: 0;
+        line-height: 1;
+        font-size: 1rem;
+        cursor: pointer;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .table-lista-ventas .accion-editar { color: #059669; }
+    .table-lista-ventas .accion-anular { color: #dc3545; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card shadow-sm border-0 mb-4">
+    <div class="card-header bg-white border-bottom-0 pt-4 pb-0">
+        <h5 class="mb-0 fw-bold text-secondary"><i class="bi bi-card-list"></i> Lista de Ventas</h5>
+    </div>
+    <div class="card-body">
+        <form id="frmListaVentas" class="row g-2 g-lg-2 align-items-end">
+            <div class="col-12 col-md-4 col-lg-3">
+                <label for="txtCodigo" class="form-label small fw-bold text-muted">Código</label>
+                <input type="text" id="txtCodigo" class="form-control form-control-sm" placeholder="Buscar por código..." maxlength="20" autocomplete="off">
+            </div>
+            <div class="col-12 col-md-4 col-lg-3">
+                <label for="txtArticulo" class="form-label small fw-bold text-muted">Item</label>
+                <input type="text" id="txtArticulo" class="form-control form-control-sm" placeholder="Buscar por item..." maxlength="50" autocomplete="off">
+            </div>
+            <div class="col-12 col-md-4 col-lg-4">
+                <label for="selCliente" class="form-label small fw-bold text-muted">Cliente</label>
+                <select id="selCliente" class="form-select form-select-sm">
+                    <option value="0" selected>Todos</option>
+                    {% for cli in clientes %}
+                    <option value="{{ cli.idempresa }}">{{ cli.razonsocial }} (RUC: {{ cli.ruc }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-12 d-flex align-items-center flex-wrap gap-2 border-top pt-3 mt-3">
+                <button type="submit" class="btn btn-primary btn-sm px-4"><i class="bi bi-search"></i> Consultar</button>
+                <button type="button" class="btn btn-success btn-sm px-4" id="btnExportExcelVentas" disabled><i class="bi bi-file-earmark-excel"></i> Exportar a Excel</button>
+                <span class="ms-auto text-muted small fw-bold">No. de Registros: <span id="lblRowCountVentas">0</span></span>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card shadow-sm border-0 d-none" id="cardResultadoVentas">
+    <div class="card-body">
+        <h4 class="text-center fw-bold mb-3">LISTADO DE VENTAS</h4>
+        <div class="table-scroll-container">
+            <table class="table table-bordered table-sm table-hover table-lista-ventas align-middle">
+                <thead id="thead-ventas"></thead>
+                <tbody id="tbody-ventas"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', async function () {
+    const URL_REPORTE = {{ url_for('lista_ventas_post') | tojson }};
+    const URL_ANULAR = {{ url_for('ventas_anular') | tojson }};
+    const URL_EDITAR_BASE = {{ url_for('ventas_editar_page', id_venta=0) | tojson }}.replace(/0$/, '');
+    let lastExportVentas = null;
+
+    function escapeHtml(s) {
+        return String(s || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    function fmtCelda(valor, idx) {
+        if (valor === null || valor === undefined) return '';
+        if (idx === 1) {
+            const d = new Date(valor);
+            if (!Number.isNaN(d.getTime())) return d.toLocaleDateString('es-PE');
+        }
+        if (typeof valor === 'number' && Number.isFinite(valor)) {
+            if (idx === 7) return String(Math.round(valor));
+            if (idx === 6 || idx === 8) {
+                return valor.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            }
+        }
+        return String(valor);
+    }
+
+    function urlEditar(idVenta) {
+        return URL_EDITAR_BASE + String(idVenta);
+    }
+
+    async function anularVenta(idVenta) {
+        if (!window.confirm('¿Está seguro de anular esta venta? Esta acción devolverá el stock de los artículos al almacén.')) {
+            return;
+        }
+        try {
+            const res = await fetch(URL_ANULAR, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id_venta: idVenta })
+            });
+            const payload = await res.json();
+            if (!res.ok || !payload.ok) {
+                alert(payload.error || 'No se pudo anular la venta.');
+                return;
+            }
+            await ejecutarConsultaVentas();
+        } catch (e) {
+            console.error(e);
+            alert('Error de red o del servidor al anular.');
+        }
+    }
+
+    function renderizarTabla(payload) {
+        const thead = document.getElementById('thead-ventas');
+        const tbody = document.getElementById('tbody-ventas');
+        const headers = payload.headers || [];
+        const rows = payload.data || [];
+        const ids = payload.ids || [];
+
+        thead.innerHTML = '<tr>' + headers.map(function (h) {
+            return '<th>' + escapeHtml(h) + '</th>';
+        }).join('') + '<th class="text-center">Acciones</th></tr>';
+
+        let html = '';
+        rows.forEach(function (row, index) {
+            const idVenta = ids[index];
+            const estadoVenta = String((row && row[2]) || '').toUpperCase();
+            html += '<tr>';
+            (row || []).forEach(function (val, idx) {
+                const align = (idx === 6 || idx === 7 || idx === 8) ? 'text-end' : '';
+                html += '<td class="' + align + '">' + escapeHtml(fmtCelda(val, idx)) + '</td>';
+            });
+            if (idVenta != null && idVenta !== '') {
+                html += '<td class="text-center">';
+                html += '<span class="acciones-wrap">';
+                html += '<a href="' + escapeHtml(urlEditar(idVenta)) + '" class="accion-icon accion-editar" title="Editar">';
+                html += '<i class="bi bi-pencil" aria-hidden="true"></i></a>';
+                if (estadoVenta !== 'ANULADA') {
+                    html += '<button type="button" class="accion-icon accion-anular btn-anular-venta" data-idventa="' + escapeHtml(String(idVenta)) + '" title="Anular">';
+                    html += '<i class="bi bi-slash-circle" aria-hidden="true"></i></button>';
+                } else {
+                    html += '<span class="text-muted">—</span>';
+                }
+                html += '</span></td>';
+            } else {
+                html += '<td class="text-center text-muted">—</td>';
+            }
+            html += '</tr>';
+        });
+        tbody.innerHTML = html;
+        tbody.querySelectorAll('.btn-anular-venta').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                const id = parseInt(btn.getAttribute('data-idventa'), 10);
+                if (!Number.isFinite(id)) return;
+                anularVenta(id);
+            });
+        });
+        document.getElementById('lblRowCountVentas').textContent = String(rows.length);
+    }
+
+    async function exportVentasExcel(payload, meta) {
+        if (typeof ExcelJS === 'undefined') {
+            alert('No se pudo cargar la librería de Excel (ExcelJS). Recargue la página e intente de nuevo.');
+            return;
+        }
+        const headers = payload.headers || [];
+        const filas = payload.data || [];
+        const ncols = headers.length;
+        if (!ncols) return;
+
+        const borderThin = { style: 'thin', color: { argb: 'FFCCCCCC' } };
+        const allBorders = { top: borderThin, left: borderThin, bottom: borderThin, right: borderThin };
+
+        const wb = new ExcelJS.Workbook();
+        const ws = wb.addWorksheet('Ventas', { views: [{ showGridLines: true }] });
+
+        let rowIdx = 1;
+        ws.mergeCells(rowIdx, 1, rowIdx, ncols);
+        const titleCell = ws.getCell(rowIdx, 1);
+        titleCell.value = 'LISTADO DE VENTAS';
+        titleCell.font = { bold: true, size: 14 };
+        titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+        titleCell.border = allBorders;
+        ws.getRow(rowIdx).height = 26;
+        rowIdx++;
+
+        const metaRow = ws.addRow(['Código', meta.codigo || '(todos)', 'Item', meta.articulo || '(todos)', 'Cliente', meta.cliente || 'Todos']);
+        metaRow.eachCell({ includeEmpty: true }, (cell) => {
+            cell.border = allBorders;
+        });
+        rowIdx += 2;
+
+        const hRow = ws.addRow(headers);
+        hRow.font = { bold: true };
+        hRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+            const idx = colNumber - 1;
+            cell.border = allBorders;
+            if (idx === 6 || idx === 7 || idx === 8) {
+                cell.alignment = { horizontal: 'right', vertical: 'middle' };
+            }
+        });
+
+        filas.forEach((rowVals) => {
+            const r = ws.addRow(rowVals || []);
+            r.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+                const idx = colNumber - 1;
+                const v = rowVals && rowVals[idx];
+                cell.border = allBorders;
+                if (idx === 7 && typeof v === 'number' && Number.isFinite(v)) {
+                    cell.numFmt = '0';
+                    cell.alignment = { horizontal: 'right', vertical: 'middle' };
+                }
+                if ((idx === 6 || idx === 8) && typeof v === 'number' && Number.isFinite(v)) {
+                    cell.numFmt = '#,##0.00';
+                    cell.alignment = { horizontal: 'right', vertical: 'middle' };
+                }
+            });
+        });
+
+        ws.getColumn(1).width = 30;
+        ws.getColumn(2).width = 16;
+        ws.getColumn(3).width = 16;
+        ws.getColumn(4).width = 14;
+        ws.getColumn(5).width = 16;
+        ws.getColumn(6).width = 40;
+        ws.getColumn(7).width = 16;
+        ws.getColumn(8).width = 12;
+        ws.getColumn(9).width = 16;
+
+        const buffer = await wb.xlsx.writeBuffer();
+        const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const stamp = new Date().toISOString().slice(0, 10);
+        a.download = `listado_ventas_${stamp}.xlsx`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+    }
+
+    async function ejecutarConsultaVentas() {
+        lastExportVentas = null;
+        document.getElementById('btnExportExcelVentas').disabled = true;
+        const codigo = document.getElementById('txtCodigo').value.trim();
+        const articulo = document.getElementById('txtArticulo').value.trim();
+        const cliente = document.getElementById('selCliente').value || '0';
+        const clienteLabel = document.getElementById('selCliente').selectedOptions[0]?.text || 'Todos';
+        try {
+            const res = await fetch(URL_REPORTE, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ codigo, articulo, cliente })
+            });
+            const payload = await res.json();
+            if (!res.ok || payload.error) {
+                document.getElementById('cardResultadoVentas').classList.add('d-none');
+                document.getElementById('lblRowCountVentas').textContent = '0';
+                document.getElementById('btnExportExcelVentas').disabled = true;
+                alert(payload.error || 'Error al consultar el listado.');
+                return;
+            }
+            document.getElementById('cardResultadoVentas').classList.remove('d-none');
+            renderizarTabla(payload);
+            lastExportVentas = {
+                headers: payload.headers || [],
+                data: payload.data || [],
+                meta: { codigo, articulo, cliente: cliente === '0' ? 'Todos' : clienteLabel }
+            };
+            document.getElementById('btnExportExcelVentas').disabled = !payload.data || payload.data.length === 0;
+        } catch (e) {
+            console.error(e);
+            document.getElementById('cardResultadoVentas').classList.add('d-none');
+            document.getElementById('lblRowCountVentas').textContent = '0';
+            document.getElementById('btnExportExcelVentas').disabled = true;
+            alert('Error de red o del servidor.');
+        }
+    }
+
+    document.getElementById('frmListaVentas').addEventListener('submit', async function (e) {
+        e.preventDefault();
+        await ejecutarConsultaVentas();
+    });
+
+    document.getElementById('btnExportExcelVentas').addEventListener('click', async function () {
+        if (!lastExportVentas || !lastExportVentas.headers || !lastExportVentas.headers.length) {
+            alert('Ejecute primero una búsqueda con resultados.');
+            return;
+        }
+        try {
+            await exportVentasExcel(
+                { headers: lastExportVentas.headers, data: lastExportVentas.data },
+                lastExportVentas.meta
+            );
+        } catch (err) {
+            console.error(err);
+            alert('No se pudo generar el archivo Excel.');
+        }
+    });
+
+    await ejecutarConsultaVentas();
+});
+</script>
+{% endblock %}

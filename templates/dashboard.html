@@ -146,6 +146,24 @@
                 <p>Consulte compras registradas, edite documentos activos o anule con control de stock.</p>
             </a>
         </div>
+        <div class="col-12 col-md-6 col-lg-5">
+            <a class="dash-module-card" href="{{ url_for('ventas_registro_page') }}" title="Registro de Ventas">
+                <span class="dash-module-card-icon" aria-hidden="true">
+                    <i class="bi bi-receipt"></i>
+                </span>
+                <h3>Registro de Ventas</h3>
+                <p>Registre ventas a clientes y descuente automáticamente el stock en almacén.</p>
+            </a>
+        </div>
+        <div class="col-12 col-md-6 col-lg-5">
+            <a class="dash-module-card" href="{{ url_for('lista_ventas_page') }}" title="Lista de Ventas">
+                <span class="dash-module-card-icon" aria-hidden="true">
+                    <i class="bi bi-journal-text"></i>
+                </span>
+                <h3>Lista de Ventas</h3>
+                <p>Consulte ventas registradas, filtre por cliente o artículo y anule con control de stock.</p>
+            </a>
+        </div>
     </div>
 </section>
 {% endblock %}

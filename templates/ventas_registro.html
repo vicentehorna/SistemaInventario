@@ -1,0 +1,770 @@
+{% extends "layout.html" %}
+
+{% block title %}Registro de Ventas{% endblock %}
+
+{% block extra_css %}
+<style>
+    .ventas-view {
+        --bg-main: #f8fafc;
+        --surface: #ffffff;
+        --border-color: #e2e8f0;
+        --text-dark: #1e293b;
+        --text-muted: #64748b;
+        --primary: #059669;
+        --primary-hover: #047857;
+        --danger: #ef4444;
+        --success: #10b981;
+        --focus-ring: rgba(5, 150, 105, 0.15);
+        --required-bg: #fffdf4;
+        --required-border: #ebdcb9;
+    }
+
+    .ventas-view.view-container {
+        padding: 0;
+        background-color: transparent;
+        min-height: auto;
+        margin: -0.25rem 0 0;
+    }
+
+    .ventas-view .section-header { margin-bottom: 1.75rem; }
+    .ventas-view .section-header h1 {
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: var(--text-dark);
+        margin: 0;
+    }
+    .ventas-view .section-header p {
+        font-size: 0.875rem;
+        color: var(--text-muted);
+        margin: 0.25rem 0 0;
+    }
+
+    .ventas-view .form-card-modern {
+        background: var(--surface);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.03);
+        padding: 2rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .ventas-view .card-subtitle-form {
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: var(--text-dark);
+        margin-bottom: 1.25rem;
+        border-bottom: 2px solid var(--bg-main);
+        padding-bottom: 0.5rem;
+    }
+
+    .ventas-view .grid-cabecera {
+        display: grid;
+        grid-template-columns: 2fr 1fr 1fr 1fr;
+        gap: 1.25rem;
+    }
+
+    .ventas-view .grid-cabecera-sec {
+        margin-top: 1.25rem;
+        grid-template-columns: 1fr 1fr 2fr;
+    }
+
+    .ventas-view .grid-selector-item {
+        display: grid;
+        grid-template-columns: 3fr 1fr 1fr auto;
+        gap: 1.25rem;
+        align-items: flex-end;
+    }
+
+    .ventas-view .form-field {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .ventas-view .form-field label {
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: var(--text-dark);
+    }
+
+    .ventas-view .input-modern {
+        font-family: inherit;
+        font-size: 0.95rem;
+        color: var(--text-dark);
+        background-color: var(--surface);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 0.65rem 1rem;
+        outline: none;
+        transition: all 0.2s ease;
+        height: 42px;
+        box-sizing: border-box;
+        width: 100%;
+    }
+
+    .ventas-view .input-required {
+        background-color: var(--required-bg);
+        border-color: var(--required-border);
+    }
+
+    .ventas-view select.input-modern {
+        appearance: none;
+        cursor: pointer;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 1rem center;
+        padding-right: 2.5rem;
+    }
+
+    .ventas-view .input-modern:focus,
+    .ventas-view select.input-modern:focus {
+        border-color: var(--primary);
+        box-shadow: 0 0 0 4px var(--focus-ring);
+        background-color: var(--surface);
+    }
+
+    .ventas-view .switch-container {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        height: 42px;
+    }
+
+    .ventas-view .switch {
+        position: relative;
+        display: inline-block;
+        width: 48px;
+        height: 24px;
+    }
+
+    .ventas-view .switch input { opacity: 0; width: 0; height: 0; }
+
+    .ventas-view .slider {
+        position: absolute;
+        cursor: pointer;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background-color: #cbd5e1;
+        transition: .3s;
+        border-radius: 24px;
+    }
+
+    .ventas-view .slider:before {
+        position: absolute;
+        content: "";
+        height: 18px; width: 18px;
+        left: 3px; bottom: 3px;
+        background-color: white;
+        transition: .3s;
+        border-radius: 50%;
+    }
+
+    .ventas-view input:checked + .slider { background-color: var(--primary); }
+    .ventas-view input:checked + .slider:before { transform: translateX(24px); }
+
+    .ventas-view .stock-hint {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+    }
+
+    .ventas-view .table-responsive {
+        margin-top: 1.5rem;
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        overflow: hidden;
+    }
+
+    .ventas-view .table-modern {
+        width: 100%;
+        border-collapse: collapse;
+        text-align: left;
+        font-size: 0.95rem;
+        margin-bottom: 0;
+    }
+
+    .ventas-view .table-modern th {
+        background-color: #f1f5f9;
+        color: var(--text-dark);
+        font-weight: 600;
+        padding: 0.75rem 1rem;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .ventas-view .table-modern td {
+        padding: 0.75rem 1rem;
+        border-bottom: 1px solid var(--border-color);
+        color: var(--text-dark);
+    }
+
+    .ventas-view .table-empty td {
+        text-align: center;
+        color: var(--text-muted);
+        font-style: italic;
+        padding: 1.5rem;
+    }
+
+    .ventas-view .totales-wrapper {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        margin-top: 1.5rem;
+        gap: 0.5rem;
+    }
+
+    .ventas-view .total-row {
+        display: flex;
+        width: 280px;
+        justify-content: space-between;
+        font-size: 0.95rem;
+        color: var(--text-muted);
+    }
+
+    .ventas-view .total-row.grand-total {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: var(--text-dark);
+        border-top: 2px solid var(--border-color);
+        padding-top: 0.5rem;
+        margin-top: 0.25rem;
+    }
+
+    .ventas-view .btn-modern {
+        font-size: 0.9rem;
+        font-weight: 500;
+        padding: 0.65rem 1.25rem;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: all 0.2s;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        border: none;
+        height: 42px;
+        text-decoration: none;
+    }
+
+    .ventas-view .btn-primary { background-color: var(--primary); color: #fff; }
+    .ventas-view .btn-primary:hover { background-color: var(--primary-hover); color: #fff; }
+    .ventas-view .btn-success { background-color: var(--success); color: #fff; }
+    .ventas-view .btn-success:hover { filter: brightness(0.9); color: #fff; }
+    .ventas-view .btn-secondary {
+        background-color: #e2e8f0;
+        color: #475569;
+    }
+    .ventas-view .btn-secondary:hover { background-color: #cbd5e1; color: #475569; }
+
+    .ventas-view .btn-danger-icon {
+        background: transparent;
+        color: var(--danger);
+        padding: 0.25rem;
+        height: 32px;
+        width: 32px;
+        border-radius: 6px;
+        justify-content: center;
+    }
+    .ventas-view .btn-danger-icon:hover { background-color: #fef2f2; }
+
+    .ventas-view .form-actions {
+        margin-top: 0;
+        padding-top: 1.5rem;
+        border-top: 1px solid var(--border-color);
+        display: flex;
+        justify-content: flex-end;
+        gap: 1rem;
+        flex-wrap: wrap;
+    }
+
+    @media (max-width: 992px) {
+        .ventas-view .grid-cabecera { grid-template-columns: 1fr 1fr; }
+        .ventas-view .grid-cabecera-sec { grid-template-columns: 1fr 1fr; }
+        .ventas-view .grid-selector-item { grid-template-columns: 1fr 1fr; }
+    }
+
+    @media (max-width: 576px) {
+        .ventas-view .form-card-modern { padding: 1.25rem; }
+        .ventas-view .grid-cabecera,
+        .ventas-view .grid-cabecera-sec,
+        .ventas-view .grid-selector-item { grid-template-columns: 1fr; }
+        .ventas-view .form-actions { flex-direction: column-reverse; }
+        .ventas-view .btn-modern { width: 100%; justify-content: center; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+{% set fp = form_preservado or {} %}
+{% set modo_edicion = fp.get('modo_edicion') %}
+<div class="ventas-view view-container">
+    <div class="section-header">
+        <h1>{% if modo_edicion %}Editar Venta{% else %}Salida de Almacén / Registro de Venta{% endif %}</h1>
+        <p>{% if modo_edicion %}Actualice los datos de la venta. El stock se recalculará según el nuevo detalle.{% else %}Registre ventas a clientes. Al guardar se descuenta el stock de cada artículo despachado.{% endif %}</p>
+    </div>
+
+    <form id="form-venta" action="{{ url_for('ventas_guardar') }}" method="POST">
+        {% if fp.get('id_venta') %}
+        <input type="hidden" name="id_venta" value="{{ fp.get('id_venta') }}">
+        {% endif %}
+        <input type="hidden" name="detalles_json" id="detalles_json" value="{{ fp.get('detalles_json', '[]') }}">
+
+        <div class="form-card-modern">
+            <div class="card-subtitle-form">Información del Comprobante</div>
+            <div class="grid-cabecera">
+                <div class="form-field">
+                    <label for="id_cliente">Cliente</label>
+                    <select id="id_cliente" name="id_cliente" class="input-modern input-required" required>
+                        <option value="" disabled {% if not fp.get('id_cliente') %}selected{% endif %}>Seleccione el cliente...</option>
+                        {% for cli in clientes %}
+                        <option value="{{ cli.idempresa }}"
+                            {% if fp.get('id_cliente')|string == cli.idempresa|string %}selected{% endif %}>
+                            {{ cli.razonsocial }} (RUC: {{ cli.ruc }})
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="form-field">
+                    <label for="fecha_venta">Fecha de Venta</label>
+                    <input type="date" id="fecha_venta" name="fecha_venta" class="input-modern input-required" required
+                           value="{{ fp.get('fecha_venta', fecha_actual) }}">
+                </div>
+
+                <div class="form-field">
+                    <label for="tipo_comprobante">Tipo Comprobante</label>
+                    <select id="tipo_comprobante" name="tipo_comprobante" class="input-modern input-required" required>
+                        {% set tipo_sel = fp.get('tipo_comprobante', 'FACTURA') %}
+                        <option value="FACTURA" {% if tipo_sel == 'FACTURA' %}selected{% endif %}>Factura</option>
+                        <option value="BOLETA" {% if tipo_sel == 'BOLETA' %}selected{% endif %}>Boleta</option>
+                        <option value="NOTA_VENTA" {% if tipo_sel == 'NOTA_VENTA' %}selected{% endif %}>Nota de Venta</option>
+                    </select>
+                </div>
+
+                <div class="form-field">
+                    <label for="nro_comprobante_ref">Referencia / Nro Doc</label>
+                    <input type="text" id="nro_comprobante_ref" name="nro_comprobante_ref" class="input-modern"
+                           placeholder="Ej: F001-000045" value="{{ fp.get('nro_comprobante_ref', '') }}">
+                </div>
+            </div>
+
+            <div class="grid-cabecera grid-cabecera-sec">
+                <div class="form-field">
+                    <label>¿Precios Incluyen IGV?</label>
+                    <div class="switch-container">
+                        <label class="switch">
+                            {% set igv_on = fp.get('incluye_igv', False) if fp else False %}
+                            <input type="checkbox" id="incluye_igv" name="incluye_igv"
+                                   {% if igv_on %}checked{% endif %}>
+                            <span class="slider"></span>
+                        </label>
+                        <span id="label-igv" style="font-size: 0.9rem; color: var(--text-dark);">No (0%)</span>
+                    </div>
+                </div>
+
+                <div class="form-field">
+                    <label for="estado_pago">Estado de Pago Informativo</label>
+                    {% set pago_sel = fp.get('estado_pago', 'PENDIENTE') %}
+                    <select id="estado_pago" name="estado_pago" class="input-modern input-required" required>
+                        <option value="PENDIENTE" {% if pago_sel == 'PENDIENTE' %}selected{% endif %}>Pendiente</option>
+                        <option value="CANCELADO" {% if pago_sel == 'CANCELADO' %}selected{% endif %}>Cancelado</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div class="form-card-modern">
+            <div class="card-subtitle-form">Artículos a Despachar</div>
+
+            <div class="grid-selector-item">
+                <div class="form-field">
+                    <label for="selector_item">Buscar Artículo / Repuesto</label>
+                    <input type="text" id="buscador_item" class="input-modern" placeholder="Escriba descripción o código...">
+                    <select id="selector_item" class="input-modern">
+                        <option value="" disabled selected>Seleccione código o descripción...</option>
+                        {% for item in articulos %}
+                        <option value="{{ item.iditem }}"
+                                data-codigo="{{ item.codigo }}"
+                                data-desc="{{ item.descripcion }}"
+                                data-stock="{{ item.stockactual or 0 }}">
+                            {{ item.descripcion }} - {{ item.codigo }} (Stock: {{ item.stockactual or 0 }})
+                        </option>
+                        {% endfor %}
+                    </select>
+                    <span class="stock-hint" id="stock-hint">Stock disponible: —</span>
+                </div>
+
+                <div class="form-field">
+                    <label for="temp_cantidad">Cantidad</label>
+                    <input type="number" id="temp_cantidad" class="input-modern" min="1" placeholder="0">
+                </div>
+
+                <div class="form-field">
+                    <label for="temp_precio">Precio Venta Unit. (S/.)</label>
+                    <input type="number" step="0.01" id="temp_precio" class="input-modern" min="0.01" placeholder="0.00">
+                </div>
+
+                <button type="button" class="btn-modern btn-success" id="btn-agregar-item">
+                    <i class="bi bi-plus-lg" aria-hidden="true"></i> Agregar
+                </button>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table-modern" id="tabla-detalles">
+                    <thead>
+                        <tr>
+                            <th>Código</th>
+                            <th>Descripción del Artículo</th>
+                            <th style="text-align: right; width: 90px;">Stock</th>
+                            <th style="text-align: right; width: 100px;">Cantidad</th>
+                            <th style="text-align: right; width: 130px;">Precio Unit.</th>
+                            <th style="text-align: right; width: 130px;">Total Línea</th>
+                            <th style="text-align: center; width: 60px;">Acción</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tbody-detalles"></tbody>
+                </table>
+            </div>
+
+            <div class="totales-wrapper">
+                <div class="total-row">
+                    <span>Sub Total:</span>
+                    <span>S/. <span id="txt-subtotal">0.00</span></span>
+                </div>
+                <div class="total-row">
+                    <span>IGV (18%):</span>
+                    <span>S/. <span id="txt-igv">0.00</span></span>
+                </div>
+                <div class="total-row grand-total">
+                    <span>Total General:</span>
+                    <span>S/. <span id="txt-total">0.00</span></span>
+                </div>
+            </div>
+        </div>
+
+        <div class="form-card-modern form-actions" style="border: none; box-shadow: none; padding-top: 0;">
+            <a href="{% if modo_edicion %}{{ url_for('lista_ventas_page') }}{% else %}{{ url_for('dashboard') }}{% endif %}" class="btn-modern btn-secondary">Cancelar</a>
+            <button type="submit" class="btn-modern btn-primary" id="btn-guardar-venta">
+                <i class="bi {% if modo_edicion %}bi-pencil-square{% else %}bi-box-arrow-up{% endif %}" aria-hidden="true"></i>
+                {% if modo_edicion %}Guardar Cambios{% else %}Procesar Venta{% endif %}
+            </button>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    let listaDetalles = [];
+    let originalQtyByItem = {};
+
+    const selectorItem = document.getElementById('selector_item');
+    const buscadorItem = document.getElementById('buscador_item');
+    const stockHint = document.getElementById('stock-hint');
+    const tipoComprobante = document.getElementById('tipo_comprobante');
+    const incluyeIgv = document.getElementById('incluye_igv');
+    const labelIgv = document.getElementById('label-igv');
+    const tbody = document.getElementById('tbody-detalles');
+    const detallesJson = document.getElementById('detalles_json');
+    const form = document.getElementById('form-venta');
+    const opcionesOriginales = Array.from(selectorItem.querySelectorAll('option'))
+        .filter(function (opt) { return opt.value; })
+        .map(function (opt) {
+            return {
+                value: opt.value,
+                codigo: opt.getAttribute('data-codigo') || '',
+                descripcion: opt.getAttribute('data-desc') || '',
+                stock: parseInt(opt.getAttribute('data-stock') || '0', 10) || 0,
+                text: opt.textContent || ''
+            };
+        });
+
+    function escHtml(s) {
+        const d = document.createElement('div');
+        d.textContent = s == null ? '' : String(s);
+        return d.innerHTML;
+    }
+
+    function stockMaximo(idItem) {
+        const op = opcionesOriginales.find(function (o) { return String(o.value) === String(idItem); });
+        const stock = op ? op.stock : 0;
+        const extra = originalQtyByItem[String(idItem)] || 0;
+        return stock + extra;
+    }
+
+    function cantidadEnDetalle(idItem, excluirIndex) {
+        let total = 0;
+        listaDetalles.forEach(function (d, idx) {
+            if (String(d.idItem) === String(idItem) && idx !== excluirIndex) {
+                total += d.cantidad;
+            }
+        });
+        return total;
+    }
+
+    function actualizarStockHint() {
+        const opt = selectorItem.options[selectorItem.selectedIndex];
+        if (!opt || !opt.value) {
+            stockHint.textContent = 'Stock disponible: —';
+            return;
+        }
+        const stock = parseInt(opt.getAttribute('data-stock') || '0', 10) || 0;
+        const usado = cantidadEnDetalle(opt.value, -1);
+        const maxDisp = stockMaximo(opt.value) - usado;
+        stockHint.textContent = 'Stock disponible: ' + Math.max(0, maxDisp);
+    }
+
+    function evaluarTipoComprobante() {
+        const tipo = tipoComprobante.value;
+        if (tipo === 'NOTA_VENTA') {
+            incluyeIgv.checked = false;
+            labelIgv.textContent = 'No aplica (0%)';
+        } else {
+            labelIgv.textContent = incluyeIgv.checked ? 'Sí (18%)' : 'No (0%)';
+        }
+        recalcularTodo();
+    }
+
+    function agregarFilaItem() {
+        const idItem = selectorItem.value;
+        const cantidad = parseInt(document.getElementById('temp_cantidad').value, 10);
+        const precioUnitario = parseFloat(document.getElementById('temp_precio').value);
+
+        if (!idItem || isNaN(cantidad) || cantidad <= 0 || isNaN(precioUnitario) || precioUnitario <= 0) {
+            alert('Complete correctamente el artículo, la cantidad y el precio unitario.');
+            return;
+        }
+
+        const option = selectorItem.options[selectorItem.selectedIndex];
+        const codigo = option.getAttribute('data-codigo');
+        const descripcion = option.getAttribute('data-desc');
+        const stock = parseInt(option.getAttribute('data-stock') || '0', 10) || 0;
+
+        const existente = listaDetalles.find(function (d) { return String(d.idItem) === String(idItem); });
+        const cantidadActual = existente ? existente.cantidad : 0;
+        const nuevaCantidad = cantidadActual + cantidad;
+        const maxQty = stockMaximo(idItem);
+
+        if (nuevaCantidad > maxQty) {
+            alert('Stock insuficiente. Disponible: ' + maxQty + ', solicitado: ' + nuevaCantidad + '.');
+            return;
+        }
+
+        if (existente) {
+            existente.cantidad = nuevaCantidad;
+            existente.totalLinea = existente.cantidad * existente.precioUnitario;
+        } else {
+            listaDetalles.push({
+                idItem: idItem,
+                codigo: codigo,
+                descripcion: descripcion,
+                stock: stock,
+                cantidad: cantidad,
+                precioUnitario: precioUnitario,
+                totalLinea: cantidad * precioUnitario
+            });
+        }
+
+        selectorItem.selectedIndex = 0;
+        document.getElementById('temp_cantidad').value = '';
+        document.getElementById('temp_precio').value = '';
+        renderizarTabla();
+    }
+
+    function normalizarTxt(texto) {
+        return String(texto || '')
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .toLowerCase()
+            .trim();
+    }
+
+    function ordenarOpcionesPorBusqueda(q) {
+        const query = normalizarTxt(q);
+
+        const ranking = opcionesOriginales.map(function (op) {
+            const desc = normalizarTxt(op.descripcion);
+            const cod = normalizarTxt(op.codigo);
+
+            let puntaje = 99;
+            if (!query) {
+                puntaje = 0;
+            } else if (desc.startsWith(query)) {
+                puntaje = 0;
+            } else if (desc.includes(query)) {
+                puntaje = 1;
+            } else if (cod.startsWith(query)) {
+                puntaje = 2;
+            } else if (cod.includes(query)) {
+                puntaje = 3;
+            }
+            return { op: op, puntaje: puntaje };
+        });
+
+        const filtradas = ranking
+            .filter(function (x) { return x.puntaje < 99; })
+            .sort(function (a, b) {
+                if (a.puntaje !== b.puntaje) return a.puntaje - b.puntaje;
+                const da = normalizarTxt(a.op.descripcion);
+                const db = normalizarTxt(b.op.descripcion);
+                if (da !== db) return da.localeCompare(db);
+                return normalizarTxt(a.op.codigo).localeCompare(normalizarTxt(b.op.codigo));
+            })
+            .map(function (x) { return x.op; });
+
+        const data = query ? filtradas : opcionesOriginales.slice();
+        selectorItem.innerHTML = '<option value="" disabled selected>Seleccione código o descripción...</option>';
+        data.forEach(function (op) {
+            const opt = document.createElement('option');
+            opt.value = op.value;
+            opt.setAttribute('data-codigo', op.codigo);
+            opt.setAttribute('data-desc', op.descripcion);
+            opt.setAttribute('data-stock', String(op.stock));
+            opt.textContent = op.text;
+            selectorItem.appendChild(opt);
+        });
+        selectorItem.selectedIndex = 0;
+        actualizarStockHint();
+    }
+
+    function renderizarTabla() {
+        tbody.innerHTML = '';
+
+        if (listaDetalles.length === 0) {
+            const tr = document.createElement('tr');
+            tr.className = 'table-empty';
+            tr.innerHTML = '<td colspan="7">No hay artículos agregados. Use el selector superior para añadir líneas.</td>';
+            tbody.appendChild(tr);
+        } else {
+            listaDetalles.forEach(function (item, index) {
+                const fila = document.createElement('tr');
+                fila.innerHTML =
+                    '<td>' + escHtml(item.codigo) + '</td>' +
+                    '<td>' + escHtml(item.descripcion) + '</td>' +
+                    '<td style="text-align: right;">' + item.stock + '</td>' +
+                    '<td style="text-align: right;">' + item.cantidad + '</td>' +
+                    '<td style="text-align: right;">S/. ' + item.precioUnitario.toFixed(2) + '</td>' +
+                    '<td style="text-align: right; font-weight:600;">S/. ' + item.totalLinea.toFixed(2) + '</td>' +
+                    '<td style="text-align: center;">' +
+                    '<button type="button" class="btn-modern btn-danger-icon" data-index="' + index + '" title="Eliminar">' +
+                    '<i class="bi bi-trash" aria-hidden="true"></i></button></td>';
+                tbody.appendChild(fila);
+            });
+
+            tbody.querySelectorAll('[data-index]').forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    eliminarFila(parseInt(btn.getAttribute('data-index'), 10));
+                });
+            });
+        }
+
+        sincronizarDetallesJson();
+        recalcularTodo();
+        actualizarStockHint();
+    }
+
+    function eliminarFila(index) {
+        listaDetalles.splice(index, 1);
+        renderizarTabla();
+    }
+
+    function recalcularTodo() {
+        const incluye = incluyeIgv.checked;
+        if (tipoComprobante.value === 'NOTA_VENTA') {
+            labelIgv.textContent = 'No aplica (0%)';
+        } else {
+            labelIgv.textContent = incluye ? 'Sí (18%)' : 'No (0%)';
+        }
+
+        let suma = 0;
+        listaDetalles.forEach(function (item) {
+            suma += item.totalLinea;
+        });
+
+        let subtotal, igv, total;
+        total = suma;
+        if (incluye) {
+            subtotal = total / 1.18;
+            igv = total - subtotal;
+        } else {
+            subtotal = total;
+            igv = 0;
+        }
+
+        document.getElementById('txt-subtotal').textContent = subtotal.toFixed(2);
+        document.getElementById('txt-igv').textContent = igv.toFixed(2);
+        document.getElementById('txt-total').textContent = total.toFixed(2);
+    }
+
+    function sincronizarDetallesJson() {
+        const payload = listaDetalles.map(function (d) {
+            return {
+                id_item: d.idItem,
+                cantidad: d.cantidad,
+                precio_unitario: d.precioUnitario
+            };
+        });
+        detallesJson.value = JSON.stringify(payload);
+    }
+
+    function cargarDetallesPreservados() {
+        try {
+            const raw = detallesJson.value || '[]';
+            const arr = JSON.parse(raw);
+            if (!Array.isArray(arr) || arr.length === 0) return;
+
+            arr.forEach(function (d) {
+                const idItem = String(d.id_item);
+                const cantidad = parseInt(d.cantidad, 10);
+                originalQtyByItem[idItem] = (originalQtyByItem[idItem] || 0) + (isNaN(cantidad) ? 0 : cantidad);
+
+                const opt = Array.prototype.find.call(selectorItem.options, function (o) {
+                    return o.value === idItem;
+                });
+                if (!opt) return;
+                const precioUnitario = parseFloat(d.precio_unitario);
+                if (isNaN(cantidad) || isNaN(precioUnitario)) return;
+
+                listaDetalles.push({
+                    idItem: idItem,
+                    codigo: opt.getAttribute('data-codigo'),
+                    descripcion: opt.getAttribute('data-desc'),
+                    stock: parseInt(opt.getAttribute('data-stock') || '0', 10) || 0,
+                    cantidad: cantidad,
+                    precioUnitario: precioUnitario,
+                    totalLinea: cantidad * precioUnitario
+                });
+            });
+            renderizarTabla();
+        } catch (e) {
+            console.warn('No se pudieron restaurar detalles:', e);
+        }
+    }
+
+    document.getElementById('btn-agregar-item').addEventListener('click', agregarFilaItem);
+    buscadorItem.addEventListener('input', function () {
+        ordenarOpcionesPorBusqueda(buscadorItem.value);
+    });
+    selectorItem.addEventListener('change', actualizarStockHint);
+    tipoComprobante.addEventListener('change', evaluarTipoComprobante);
+    incluyeIgv.addEventListener('change', recalcularTodo);
+
+    form.addEventListener('submit', function (e) {
+        sincronizarDetallesJson();
+        if (listaDetalles.length === 0) {
+            e.preventDefault();
+            alert('Debe añadir al menos un artículo al detalle antes de guardar la venta.');
+        }
+    });
+
+    var tienePreservado = {{ 'true' if form_preservado else 'false' }};
+    if (!tienePreservado) {
+        evaluarTipoComprobante();
+    } else {
+        labelIgv.textContent = incluyeIgv.checked ? 'Sí (18%)' : 'No (0%)';
+        recalcularTodo();
+    }
+    cargarDetallesPreservados();
+    if (listaDetalles.length === 0) {
+        renderizarTabla();
+    }
+})();
+</script>
+{% endblock %}

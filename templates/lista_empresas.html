@@ -104,6 +104,14 @@
                 <label for="txtRazon" class="form-label small fw-bold text-muted">Razón social</label>
                 <input type="text" id="txtRazon" class="form-control form-control-sm" placeholder="Buscar por razón social..." maxlength="100" autocomplete="off">
             </div>
+            <div class="col-12 col-md-3 col-lg-3">
+                <label for="selTipo" class="form-label small fw-bold text-muted">Tipo</label>
+                <select id="selTipo" class="form-select form-select-sm">
+                    <option value="TODOS" selected>Todos</option>
+                    <option value="CLIENTE">Clientes</option>
+                    <option value="PROVEEDOR">Proveedores</option>
+                </select>
+            </div>
             <div class="col-12 d-flex align-items-center flex-wrap gap-2 border-top pt-3 mt-3">
                 <button type="submit" class="btn btn-primary btn-sm px-4"><i class="bi bi-search"></i> Consultar</button>
                 <a href="{{ url_for('empresas_page') }}" class="btn btn-outline-primary btn-sm px-4"><i class="bi bi-plus-lg"></i> Nueva empresa</a>
@@ -235,12 +243,13 @@ document.addEventListener('DOMContentLoaded', async function () {
     async function ejecutarConsultaEmpresas() {
         const ruc = document.getElementById('txtRuc').value.trim();
         const razon = document.getElementById('txtRazon').value.trim();
+        const tipo = document.getElementById('selTipo').value || 'TODOS';
 
         try {
             const res = await fetch(URL_REPORTE, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ruc: ruc, razon_social: razon })
+                body: JSON.stringify({ ruc: ruc, razon_social: razon, tipo: tipo })
             });
             const payload = await res.json();
             if (!res.ok || payload.error) {

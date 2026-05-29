@@ -87,6 +87,13 @@ from database import (
     actualizar_compra,
     anular_compra,
     get_fecha_hoy_sql,
+    get_clientes_activos,
+    get_articulos_para_venta,
+    insertar_venta,
+    get_lista_ventas_inventario,
+    anular_venta,
+    get_venta_por_id,
+    actualizar_venta,
 )
 
 load_dotenv()
@@ -1454,6 +1461,9 @@ def lista_empresas_post():
     body = request.get_json(silent=True) or {}
     ruc = str(body.get('ruc') or '').strip()
     razon = str(body.get('razon_social') or body.get('nombre') or '').strip()
+    tipo = str(body.get('tipo') or 'TODOS').strip().upper()
+    if tipo not in ('TODOS', 'CLIENTE', 'PROVEEDOR'):
+        tipo = 'TODOS'
 
     headers_es = [
         'RUC',
@@ -1471,7 +1481,7 @@ def lista_empresas_post():
     ]
 
     try:
-        rows = get_listado_empresas_inventario(ruc, razon)
+        rows = get_listado_empresas_inventario(ruc, razon, tipo)
         resultado = []
         ids = []
         for r in rows:
@@ -1589,6 +1599,213 @@ def compras_guardar():
             'incluye_igv': incluye_igv,
             'estado_pago': estado_pago,
             'detalles_json': detalles_raw,
+        },
+    )
+
+
+@app.route('/operaciones/ventas/registro', methods=['GET'])
+@login_required
+def ventas_registro_page():
+    """Formulario de registro de ventas a clientes (salida de almacén)."""
+    ensure_user_session()
+    return render_template(
+        'ventas_registro.html',
+        clientes=get_clientes_activos(),
+        articulos=get_articulos_para_venta(),
+        fecha_actual=_fecha_hoy_app().isoformat(),
+    )
+
+
+@app.route('/operaciones/ventas/guardar', methods=['POST'])
+@login_required
+def ventas_guardar():
+    """Guarda cabecera y detalle de venta; descuenta stock."""
+    ensure_user_session()
+    id_cliente = request.form.get('id_cliente')
+    fecha_venta = request.form.get('fecha_venta')
+    tipo_comprobante = request.form.get('tipo_comprobante')
+    nro_comprobante_ref = request.form.get('nro_comprobante_ref')
+    incluye_igv = request.form.get('incluye_igv') in ('on', '1', 'true', 'True')
+    estado_pago = request.form.get('estado_pago')
+
+    detalles_raw = request.form.get('detalles_json', '[]')
+    try:
+        detalles = json.loads(detalles_raw) if detalles_raw else []
+    except json.JSONDecodeError:
+        detalles = []
+
+    if not isinstance(detalles, list):
+        detalles = []
+
+    id_venta = request.form.get('id_venta')
+
+    if id_venta:
+        ok, msg = actualizar_venta(
+            id_venta,
+            id_cliente,
+            fecha_venta,
+            tipo_comprobante,
+            nro_comprobante_ref,
+            incluye_igv,
+            estado_pago,
+            detalles,
+        )
+        modo_edicion = True
+    else:
+        ok, msg = insertar_venta(
+            id_cliente,
+            fecha_venta,
+            tipo_comprobante,
+            nro_comprobante_ref,
+            incluye_igv,
+            estado_pago,
+            detalles,
+        )
+        modo_edicion = False
+
+    if ok:
+        flash(msg, 'success')
+        return redirect(url_for('lista_ventas_page'))
+
+    flash(msg, 'error')
+    return render_template(
+        'ventas_registro.html',
+        clientes=get_clientes_activos(),
+        articulos=get_articulos_para_venta(),
+        fecha_actual=fecha_venta or _fecha_hoy_app().isoformat(),
+        form_preservado={
+            'id_venta': id_venta,
+            'id_cliente': id_cliente,
+            'fecha_venta': fecha_venta,
+            'tipo_comprobante': tipo_comprobante,
+            'nro_comprobante_ref': nro_comprobante_ref,
+            'incluye_igv': incluye_igv,
+            'estado_pago': estado_pago,
+            'detalles_json': detalles_raw,
+            'modo_edicion': modo_edicion,
+        },
+    )
+
+
+@app.route('/operaciones/ventas/lista', methods=['GET'])
+@login_required
+def lista_ventas_page():
+    """Vista de listado de ventas."""
+    ensure_user_session()
+    return render_template('lista_ventas.html', clientes=get_clientes_activos())
+
+
+@app.route('/operaciones/ventas/listado', methods=['POST'])
+@login_required
+def lista_ventas_post():
+    """JSON de ventas usando sp_inv_lista_ventas."""
+    ensure_user_session()
+    body = request.get_json(silent=True) or {}
+    codigo = str(body.get('codigo') or '').strip()
+    articulo = str(body.get('articulo') or body.get('item') or '').strip()
+    try:
+        cliente = int(body.get('cliente') or 0)
+    except (TypeError, ValueError):
+        cliente = 0
+
+    headers_es = [
+        'Cliente',
+        'Fecha venta',
+        'Estado venta',
+        'Estado pago',
+        'Código',
+        'Artículo',
+        'Precio unitario',
+        'Cantidad',
+        'Total línea',
+    ]
+
+    try:
+        rows = get_lista_ventas_inventario(codigo, articulo, cliente)
+        data = []
+        ids = []
+        for r in rows:
+            id_venta = r.get('idventa')
+            try:
+                ids.append(int(id_venta))
+            except (TypeError, ValueError):
+                ids.append(None)
+
+            fila = [
+                _jsonable_value(r.get('razonsocial')),
+                _jsonable_value(r.get('fechaventa')),
+                _jsonable_value(r.get('estadoventa')),
+                _jsonable_value(r.get('estadopago')),
+                _jsonable_value(r.get('codigo')),
+                _jsonable_value(r.get('descripcion')),
+                _jsonable_value(r.get('preciounitario')),
+                _jsonable_value(r.get('cantidad')),
+                _jsonable_value(r.get('totallinea')),
+            ]
+            data.append(fila)
+        return jsonify({'headers': headers_es, 'data': data, 'ids': ids})
+    except Exception as e:
+        logging.exception('lista_ventas_post')
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/operaciones/ventas/anular', methods=['POST'])
+@login_required
+def ventas_anular():
+    """Anula venta y devuelve stock al almacén."""
+    ensure_user_session()
+    body = request.get_json(silent=True) or {}
+    id_venta = body.get('id_venta')
+    ok, msg = anular_venta(id_venta)
+    if ok:
+        return jsonify({'ok': True, 'message': msg})
+    return jsonify({'ok': False, 'error': msg}), 400
+
+
+@app.route('/operaciones/ventas/editar/<int:id_venta>', methods=['GET'])
+@login_required
+def ventas_editar_page(id_venta):
+    """Formulario de ventas en modo edición."""
+    ensure_user_session()
+    venta = get_venta_por_id(id_venta)
+    if not venta:
+        flash('Venta no encontrada.', 'error')
+        return redirect(url_for('lista_ventas_page'))
+    if str(venta.get('estadoventa') or '').upper() == 'ANULADA':
+        flash('No se puede editar una venta anulada.', 'error')
+        return redirect(url_for('lista_ventas_page'))
+
+    fecha_venta = venta.get('fechaventa')
+    fecha_form = _fecha_hoy_app().isoformat()
+    if hasattr(fecha_venta, 'strftime'):
+        fecha_form = fecha_venta.strftime('%Y-%m-%d')
+    elif isinstance(fecha_venta, str) and fecha_venta:
+        fecha_form = fecha_venta[:10]
+
+    detalles_json = json.dumps([
+        {
+            'id_item': d.get('iditem'),
+            'cantidad': d.get('cantidad'),
+            'precio_unitario': float(d.get('preciounitario') or 0),
+        }
+        for d in (venta.get('detalles') or [])
+    ])
+
+    return render_template(
+        'ventas_registro.html',
+        clientes=get_clientes_activos(),
+        articulos=get_articulos_para_venta(),
+        fecha_actual=fecha_form,
+        form_preservado={
+            'id_venta': venta.get('idventa'),
+            'id_cliente': venta.get('idcliente'),
+            'fecha_venta': fecha_form,
+            'tipo_comprobante': venta.get('tipocomprobante') or 'FACTURA',
+            'nro_comprobante_ref': venta.get('nrocomprobanteref') or '',
+            'incluye_igv': bool(venta.get('incluyeigv')),
+            'estado_pago': venta.get('estadopago') or 'PENDIENTE',
+            'detalles_json': detalles_json,
+            'modo_edicion': True,
         },
     )
 

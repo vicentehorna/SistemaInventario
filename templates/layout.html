@@ -433,6 +433,20 @@
                         </a>
                     </li>
 
+                    <li class="{{ 'active' if request.endpoint in ('ventas_registro_page', 'ventas_guardar', 'ventas_editar_page') else '' }}">
+                        <a href="{{ url_for('ventas_registro_page') }}" class="sidebar-link" title="Registro de Ventas">
+                            <i class="bi bi-receipt sidebar-icon" aria-hidden="true"></i>
+                            <span class="sidebar-link-text">Registro de Ventas</span>
+                        </a>
+                    </li>
+
+                    <li class="{{ 'active' if request.endpoint == 'lista_ventas_page' else '' }}">
+                        <a href="{{ url_for('lista_ventas_page') }}" class="sidebar-link" title="Lista de Ventas">
+                            <i class="bi bi-journal-text sidebar-icon" aria-hidden="true"></i>
+                            <span class="sidebar-link-text">Lista de Ventas</span>
+                        </a>
+                    </li>
+
                     <hr class="mx-3 opacity-25 mt-3 mb-2">
 
                     <li>

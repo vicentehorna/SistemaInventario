@@ -2687,13 +2687,16 @@ def eliminar_inventario_empresa(idempresa):
                 pass
 
 
-def get_listado_empresas_inventario(ruc='', razon_social=''):
+def get_listado_empresas_inventario(ruc='', razon_social='', tipo='TODOS'):
     """Listado de empresas con filtros opcionales."""
     conn = None
     ruc_s = (ruc or '').strip()
     nombre_s = (razon_social or '').strip()
     ruc_like = f'%{ruc_s}%'
     nombre_like = f'%{nombre_s}%'
+    tipo_filtro = (tipo or 'TODOS').strip().upper()
+    if tipo_filtro not in ('TODOS', 'CLIENTE', 'PROVEEDOR'):
+        tipo_filtro = 'TODOS'
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -2717,9 +2720,14 @@ def get_listado_empresas_inventario(ruc='', razon_social=''):
             LEFT JOIN dbo.Ubigeo_Departamentos dep ON e.IdDepartamento = dep.IdDepartamento
             WHERE (? = '' OR e.RUC LIKE ?)
               AND (? = '' OR e.RazonSocial LIKE ?)
+              AND (
+                    ? = 'TODOS'
+                    OR (? = 'CLIENTE' AND e.EsCliente = 1)
+                    OR (? = 'PROVEEDOR' AND e.EsProveedor = 1)
+                  )
             ORDER BY e.RazonSocial
             """,
-            (ruc_s, ruc_like, nombre_s, nombre_like),
+            (ruc_s, ruc_like, nombre_s, nombre_like, tipo_filtro, tipo_filtro, tipo_filtro),
         )
         columns = [col[0] for col in cursor.description]
         rows = []
@@ -3325,6 +3333,611 @@ def anular_compra(id_compra):
             except Exception:
                 pass
         return False, "Error al anular la compra."
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def get_clientes_activos():
+    """Clientes activos para selector de ventas."""
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT IdEmpresa, RUC, RazonSocial
+            FROM dbo.Inventario_Empresas
+            WHERE EsCliente = 1 AND Estado = 1
+            ORDER BY RazonSocial
+            """
+        )
+        columns = [col[0] for col in cursor.description]
+        rows = []
+        for row in cursor.fetchall():
+            item = {col: val for col, val in zip(columns, row)}
+            rows.append({k.lower(): v for k, v in item.items()})
+        cursor.close()
+        return rows
+    except Exception as e:
+        _logger_db.exception("get_clientes_activos: %s", e)
+        return []
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def get_articulos_para_venta():
+    """Artículos con stock para líneas de detalle en ventas."""
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT IdItem, Codigo, Descripcion, StockActual
+            FROM dbo.Inventario_Items
+            ORDER BY Descripcion, Codigo
+            """
+        )
+        columns = [col[0] for col in cursor.description]
+        rows = []
+        for row in cursor.fetchall():
+            item = {col: val for col, val in zip(columns, row)}
+            rows.append({k.lower(): v for k, v in item.items()})
+        cursor.close()
+        return rows
+    except Exception as e:
+        _logger_db.exception("get_articulos_para_venta: %s", e)
+        return []
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def _calcular_totales_venta(detalles, incluye_igv):
+    """Calcula subtotal, IGV y total para ventas (misma lógica que compras)."""
+    return _calcular_totales_compra(detalles, incluye_igv)
+
+
+def insertar_venta(
+    id_cliente,
+    fecha_venta,
+    tipo_comprobante,
+    nro_comprobante_ref,
+    incluye_igv,
+    estado_pago,
+    detalles,
+):
+    """
+    Registra cabecera y detalle de venta; descuenta stock por cada línea.
+    detalles: lista de dicts con id_item, cantidad, precio_unitario.
+    """
+    from decimal import Decimal, ROUND_HALF_UP
+
+    if not detalles:
+        return False, "Debe agregar al menos un artículo al detalle."
+
+    try:
+        id_cliente = int(id_cliente)
+    except (TypeError, ValueError):
+        return False, "Cliente no válido."
+
+    tipos_ok = ('FACTURA', 'BOLETA', 'NOTA_VENTA')
+    tipo = (tipo_comprobante or '').strip().upper()
+    if tipo not in tipos_ok:
+        return False, "Tipo de comprobante no válido."
+
+    estado_pago_val = (estado_pago or 'PENDIENTE').strip().upper()
+    if estado_pago_val not in ('PENDIENTE', 'CANCELADO'):
+        return False, "Estado de pago no válido."
+
+    lineas = []
+    for d in detalles:
+        try:
+            id_item = int(d.get('id_item') or d.get('idItem'))
+            cantidad = int(d.get('cantidad'))
+            precio_unitario = Decimal(str(d.get('precio_unitario') or d.get('precioUnitario')))
+        except (TypeError, ValueError, ArithmeticError):
+            return False, "Línea de detalle con datos inválidos."
+        if cantidad <= 0:
+            return False, "La cantidad debe ser mayor a cero."
+        if precio_unitario <= 0:
+            return False, "El precio unitario debe ser mayor a cero."
+        total_linea = (Decimal(cantidad) * precio_unitario).quantize(
+            Decimal('0.01'), rounding=ROUND_HALF_UP
+        )
+        lineas.append({
+            'id_item': id_item,
+            'cantidad': cantidad,
+            'precio_unitario': precio_unitario,
+            'total_linea': total_linea,
+        })
+
+    incluye = bool(incluye_igv)
+    subtotal, igv, total = _calcular_totales_venta(lineas, incluye)
+
+    if isinstance(fecha_venta, str):
+        fecha_venta = fecha_venta.strip()[:10]
+    try:
+        partes = fecha_venta.split('-')
+        fecha_dt = datetime(int(partes[0]), int(partes[1]), int(partes[2]))
+    except (ValueError, IndexError, AttributeError):
+        return False, "Fecha de venta no válida."
+
+    nro_ref = (nro_comprobante_ref or '').strip() or None
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            "SELECT 1 FROM dbo.Inventario_Empresas WHERE IdEmpresa = ? AND EsCliente = 1",
+            (id_cliente,),
+        )
+        if not cursor.fetchone():
+            cursor.close()
+            return False, "El cliente seleccionado no existe o no es cliente."
+
+        for ln in lineas:
+            cursor.execute(
+                "SELECT StockActual FROM dbo.Inventario_Items WHERE IdItem = ?",
+                (ln['id_item'],),
+            )
+            row_stock = cursor.fetchone()
+            if not row_stock:
+                conn.rollback()
+                cursor.close()
+                return False, f"Artículo IdItem {ln['id_item']} no encontrado."
+            stock_disp = int(row_stock[0] or 0)
+            if stock_disp < ln['cantidad']:
+                conn.rollback()
+                cursor.close()
+                return False, (
+                    f"Stock insuficiente para el artículo IdItem {ln['id_item']}. "
+                    f"Disponible: {stock_disp}, solicitado: {ln['cantidad']}."
+                )
+
+        cursor.execute(
+            """
+            INSERT INTO dbo.Inventario_VentasCab (
+                IdCliente, FechaVenta, TipoComprobante, NroComprobanteRef,
+                IncluyeIGV, SubTotal, IGV, Total,
+                EstadoVenta, EstadoPago
+            )
+            OUTPUT INSERTED.IdVenta
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVA', ?)
+            """,
+            (
+                id_cliente,
+                fecha_dt,
+                tipo,
+                nro_ref,
+                1 if incluye else 0,
+                float(subtotal),
+                float(igv),
+                float(total),
+                estado_pago_val,
+            ),
+        )
+        row = cursor.fetchone()
+        if not row:
+            conn.rollback()
+            return False, "No se pudo registrar la venta."
+        id_venta = int(row[0])
+
+        for ln in lineas:
+            cursor.execute(
+                """
+                INSERT INTO dbo.Inventario_VentasDet (
+                    IdVenta, IdItem, Cantidad, PrecioUnitario, TotalLinea
+                )
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    id_venta,
+                    ln['id_item'],
+                    ln['cantidad'],
+                    float(ln['precio_unitario']),
+                    float(ln['total_linea']),
+                ),
+            )
+            cursor.execute(
+                """
+                UPDATE dbo.Inventario_Items
+                SET StockActual = StockActual - ?
+                WHERE IdItem = ? AND StockActual >= ?
+                """,
+                (ln['cantidad'], ln['id_item'], ln['cantidad']),
+            )
+            if cursor.rowcount == 0:
+                conn.rollback()
+                cursor.close()
+                return False, f"Stock insuficiente al despachar el artículo IdItem {ln['id_item']}."
+
+        conn.commit()
+        cursor.close()
+        return True, f"Venta registrada correctamente (N° {id_venta}). Stock actualizado."
+    except Exception as e:
+        _logger_db.exception("insertar_venta: %s", e)
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        err = str(e).lower()
+        if 'invalid object name' in err and 'ventas' in err:
+            return False, (
+                "Las tablas de ventas no existen en la base de datos. "
+                "Ejecute el script sql/Inventario_Ventas.sql."
+            )
+        return False, "Error al registrar la venta. Verifique los datos e intente nuevamente."
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def get_venta_por_id(id_venta):
+    """Obtiene cabecera y detalle de una venta para edición."""
+    conn = None
+    try:
+        id_venta_i = int(id_venta)
+    except (TypeError, ValueError):
+        return None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT
+                v.IdVenta, v.IdCliente, v.FechaVenta, v.TipoComprobante, v.NroComprobanteRef,
+                v.IncluyeIGV, v.EstadoPago, v.EstadoVenta
+            FROM dbo.Inventario_VentasCab v
+            WHERE v.IdVenta = ?
+            """,
+            (id_venta_i,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            cursor.close()
+            return None
+        columns = [col[0] for col in cursor.description]
+        cab = {k.lower(): v for k, v in dict(zip(columns, row)).items()}
+
+        cursor.execute(
+            """
+            SELECT
+                d.IdItem, i.Codigo, i.Descripcion, d.Cantidad, d.PrecioUnitario, d.TotalLinea
+            FROM dbo.Inventario_VentasDet d
+            INNER JOIN dbo.Inventario_Items i ON d.IdItem = i.IdItem
+            WHERE d.IdVenta = ?
+            ORDER BY d.IdVentaDet
+            """,
+            (id_venta_i,),
+        )
+        det_cols = [col[0] for col in cursor.description]
+        detalles = []
+        for det in cursor.fetchall():
+            item = {k.lower(): v for k, v in dict(zip(det_cols, det)).items()}
+            detalles.append(item)
+        cursor.close()
+        cab['detalles'] = detalles
+        return cab
+    except Exception as e:
+        _logger_db.exception("get_venta_por_id: %s", e)
+        return None
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def actualizar_venta(
+    id_venta,
+    id_cliente,
+    fecha_venta,
+    tipo_comprobante,
+    nro_comprobante_ref,
+    incluye_igv,
+    estado_pago,
+    detalles,
+):
+    """Actualiza venta activa, recalcula detalle y ajusta stock."""
+    from decimal import Decimal, ROUND_HALF_UP
+
+    if not detalles:
+        return False, "Debe agregar al menos un artículo al detalle."
+    try:
+        id_venta = int(id_venta)
+        id_cliente = int(id_cliente)
+    except (TypeError, ValueError):
+        return False, "Venta o cliente no válido."
+
+    tipos_ok = ('FACTURA', 'BOLETA', 'NOTA_VENTA')
+    tipo = (tipo_comprobante or '').strip().upper()
+    if tipo not in tipos_ok:
+        return False, "Tipo de comprobante no válido."
+    estado_pago_val = (estado_pago or 'PENDIENTE').strip().upper()
+    if estado_pago_val not in ('PENDIENTE', 'CANCELADO'):
+        return False, "Estado de pago no válido."
+
+    lineas = []
+    for d in detalles:
+        try:
+            id_item = int(d.get('id_item') or d.get('idItem'))
+            cantidad = int(d.get('cantidad'))
+            precio_unitario = Decimal(str(d.get('precio_unitario') or d.get('precioUnitario')))
+        except (TypeError, ValueError, ArithmeticError):
+            return False, "Línea de detalle con datos inválidos."
+        if cantidad <= 0 or precio_unitario <= 0:
+            return False, "Cantidad y precio unitario deben ser mayores a cero."
+        total_linea = (Decimal(cantidad) * precio_unitario).quantize(
+            Decimal('0.01'), rounding=ROUND_HALF_UP
+        )
+        lineas.append({
+            'id_item': id_item,
+            'cantidad': cantidad,
+            'precio_unitario': precio_unitario,
+            'total_linea': total_linea,
+        })
+
+    incluye = bool(incluye_igv)
+    subtotal, igv, total = _calcular_totales_venta(lineas, incluye)
+
+    if isinstance(fecha_venta, str):
+        fecha_venta = fecha_venta.strip()[:10]
+    try:
+        partes = fecha_venta.split('-')
+        fecha_dt = datetime(int(partes[0]), int(partes[1]), int(partes[2]))
+    except (ValueError, IndexError, AttributeError):
+        return False, "Fecha de venta no válida."
+
+    nro_ref = (nro_comprobante_ref or '').strip() or None
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT EstadoVenta
+            FROM dbo.Inventario_VentasCab
+            WHERE IdVenta = ?
+            """,
+            (id_venta,),
+        )
+        row_venta = cursor.fetchone()
+        if not row_venta:
+            cursor.close()
+            return False, "La venta no existe."
+        if str(row_venta[0] or '').strip().upper() == 'ANULADA':
+            cursor.close()
+            return False, "No se puede editar una venta anulada."
+
+        cursor.execute(
+            "SELECT 1 FROM dbo.Inventario_Empresas WHERE IdEmpresa = ? AND EsCliente = 1",
+            (id_cliente,),
+        )
+        if not cursor.fetchone():
+            cursor.close()
+            return False, "El cliente seleccionado no existe o no es cliente."
+
+        cursor.execute(
+            "SELECT IdItem, Cantidad FROM dbo.Inventario_VentasDet WHERE IdVenta = ?",
+            (id_venta,),
+        )
+        old_det = cursor.fetchall()
+        for od in old_det:
+            od_item = int(od[0])
+            od_qty = int(od[1] or 0)
+            if od_qty <= 0:
+                continue
+            cursor.execute(
+                """
+                UPDATE dbo.Inventario_Items
+                SET StockActual = StockActual + ?
+                WHERE IdItem = ?
+                """,
+                (od_qty, od_item),
+            )
+
+        cursor.execute("DELETE FROM dbo.Inventario_VentasDet WHERE IdVenta = ?", (id_venta,))
+
+        cursor.execute(
+            """
+            UPDATE dbo.Inventario_VentasCab
+            SET IdCliente = ?, FechaVenta = ?, TipoComprobante = ?, NroComprobanteRef = ?,
+                IncluyeIGV = ?, SubTotal = ?, IGV = ?, Total = ?, EstadoPago = ?
+            WHERE IdVenta = ?
+            """,
+            (
+                id_cliente,
+                fecha_dt,
+                tipo,
+                nro_ref,
+                1 if incluye else 0,
+                float(subtotal),
+                float(igv),
+                float(total),
+                estado_pago_val,
+                id_venta,
+            ),
+        )
+
+        for ln in lineas:
+            cursor.execute("SELECT 1 FROM dbo.Inventario_Items WHERE IdItem = ?", (ln['id_item'],))
+            if not cursor.fetchone():
+                conn.rollback()
+                cursor.close()
+                return False, f"Artículo IdItem {ln['id_item']} no encontrado."
+
+            cursor.execute(
+                "SELECT StockActual FROM dbo.Inventario_Items WHERE IdItem = ?",
+                (ln['id_item'],),
+            )
+            row_stock = cursor.fetchone()
+            stock_disp = int(row_stock[0] or 0) if row_stock else 0
+            if stock_disp < ln['cantidad']:
+                conn.rollback()
+                cursor.close()
+                return False, (
+                    f"Stock insuficiente para el artículo IdItem {ln['id_item']}. "
+                    f"Disponible: {stock_disp}, solicitado: {ln['cantidad']}."
+                )
+
+            cursor.execute(
+                """
+                INSERT INTO dbo.Inventario_VentasDet (
+                    IdVenta, IdItem, Cantidad, PrecioUnitario, TotalLinea
+                )
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    id_venta,
+                    ln['id_item'],
+                    ln['cantidad'],
+                    float(ln['precio_unitario']),
+                    float(ln['total_linea']),
+                ),
+            )
+            cursor.execute(
+                """
+                UPDATE dbo.Inventario_Items
+                SET StockActual = StockActual - ?
+                WHERE IdItem = ? AND StockActual >= ?
+                """,
+                (ln['cantidad'], ln['id_item'], ln['cantidad']),
+            )
+            if cursor.rowcount == 0:
+                conn.rollback()
+                cursor.close()
+                return False, f"Stock insuficiente al despachar el artículo IdItem {ln['id_item']}."
+
+        conn.commit()
+        cursor.close()
+        return True, f"Venta actualizada correctamente (N° {id_venta})."
+    except Exception as e:
+        _logger_db.exception("actualizar_venta: %s", e)
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        return False, "Error al actualizar la venta."
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def get_lista_ventas_inventario(codigo='', articulo='', cliente=0):
+    """Ejecuta sp_inv_lista_ventas con filtros."""
+    conn = None
+    codigo_s = (codigo or '').strip()
+    articulo_s = (articulo or '').strip()
+    try:
+        cliente_i = int(cliente or 0)
+    except (TypeError, ValueError):
+        cliente_i = 0
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "EXEC sp_inv_lista_ventas @codigo=?, @articulo=?, @cliente=?",
+            (codigo_s, articulo_s, cliente_i),
+        )
+        columns = [col[0] for col in cursor.description]
+        rows = []
+        for row in cursor.fetchall():
+            item = {col: val for col, val in zip(columns, row)}
+            rows.append({k.lower(): v for k, v in item.items()})
+        cursor.close()
+        return rows
+    except Exception as e:
+        _logger_db.exception("get_lista_ventas_inventario: %s", e)
+        raise
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def anular_venta(id_venta):
+    """Anula una venta activa y devuelve el stock del detalle al almacén."""
+    conn = None
+    try:
+        id_venta = int(id_venta)
+    except (TypeError, ValueError):
+        return False, "Venta no válida."
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT EstadoVenta FROM dbo.Inventario_VentasCab WHERE IdVenta = ?",
+            (id_venta,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            cursor.close()
+            return False, "La venta no existe."
+        estado = str(row[0] or '').strip().upper()
+        if estado == 'ANULADA':
+            cursor.close()
+            return False, "La venta ya está anulada."
+
+        cursor.execute(
+            "SELECT IdItem, Cantidad FROM dbo.Inventario_VentasDet WHERE IdVenta = ?",
+            (id_venta,),
+        )
+        detalles = cursor.fetchall()
+        for det in detalles:
+            id_item = int(det[0])
+            cantidad = int(det[1] or 0)
+            if cantidad <= 0:
+                continue
+            cursor.execute(
+                """
+                UPDATE dbo.Inventario_Items
+                SET StockActual = StockActual + ?
+                WHERE IdItem = ?
+                """,
+                (cantidad, id_item),
+            )
+
+        cursor.execute(
+            "UPDATE dbo.Inventario_VentasCab SET EstadoVenta = 'ANULADA' WHERE IdVenta = ?",
+            (id_venta,),
+        )
+        conn.commit()
+        cursor.close()
+        return True, f"Venta N° {id_venta} anulada correctamente."
+    except Exception as e:
+        _logger_db.exception("anular_venta: %s", e)
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        return False, "Error al anular la venta."
     finally:
         if conn:
             try:
