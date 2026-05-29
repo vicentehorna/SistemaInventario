@@ -7,6 +7,7 @@ import io
 import zipfile
 import base64
 from datetime import date, datetime
+from zoneinfo import ZoneInfo
 from decimal import Decimal
 
 import resend
@@ -85,9 +86,22 @@ from database import (
     get_compra_por_id,
     actualizar_compra,
     anular_compra,
+    get_fecha_hoy_sql,
 )
 
 load_dotenv()
+
+_APP_TZ = ZoneInfo(os.getenv('APP_TIMEZONE', 'America/Lima'))
+
+
+def _fecha_hoy_app():
+    """Fecha calendario: prioriza GETDATE() de SQL Server, luego zona Lima."""
+    fecha_sql = get_fecha_hoy_sql()
+    if fecha_sql:
+        return fecha_sql
+    return datetime.now(_APP_TZ).date()
+
+
 app = Flask(__name__)
 # Credenciales Google Drive: use GOOGLE_DRIVE_CREDENTIALS_FILE o SERVICE_ACCOUNT_FILE en .env (ruta al JSON).
 SERVICE_ACCOUNT_FILE = os.getenv('SERVICE_ACCOUNT_FILE')
@@ -1372,6 +1386,7 @@ def empresas_guardar():
     if idempresa:
         ok, msg = actualizar_inventario_empresa(
             idempresa,
+            form['ruc'],
             form['razon_social'],
             direccion=form['direccion'],
             id_departamento=form['id_departamento'],
@@ -1507,7 +1522,7 @@ def compras_registro_page():
         'compras_registro.html',
         proveedores=get_proveedores_activos(),
         articulos=get_articulos_para_compra(),
-        fecha_actual=date.today().isoformat(),
+        fecha_actual=_fecha_hoy_app().isoformat(),
     )
 
 
@@ -1564,7 +1579,7 @@ def compras_guardar():
         'compras_registro.html',
         proveedores=get_proveedores_activos(),
         articulos=get_articulos_para_compra(),
-        fecha_actual=fecha_compra or date.today().isoformat(),
+        fecha_actual=fecha_compra or _fecha_hoy_app().isoformat(),
         form_preservado={
             'id_compra': id_compra,
             'id_proveedor': id_proveedor,
@@ -1592,7 +1607,7 @@ def compras_editar_page(id_compra):
         return redirect(url_for('lista_compras_page'))
 
     fecha_compra = compra.get('fechacompra')
-    fecha_form = date.today().isoformat()
+    fecha_form = _fecha_hoy_app().isoformat()
     if hasattr(fecha_compra, 'strftime'):
         fecha_form = fecha_compra.strftime('%Y-%m-%d')
     elif isinstance(fecha_compra, str) and fecha_compra:

@@ -266,7 +266,7 @@
 <div class="empresas-view view-container">
     <div class="section-header">
         <h1>{% if modo_edicion %}Editar Empresa{% else %}Registrar Empresa{% endif %}</h1>
-        <p>{% if modo_edicion %}Modifique los datos del cliente o proveedor. El RUC no puede cambiarse.{% else %}Registre clientes y proveedores con su ubicación (ubigeo). Los campos resaltados son obligatorios.{% endif %}</p>
+        <p>{% if modo_edicion %}Modifique los datos del cliente o proveedor.{% else %}Registre clientes y proveedores con su ubicación (ubigeo). Los campos resaltados son obligatorios.{% endif %}</p>
     </div>
 
     <div class="form-card-modern">
@@ -278,10 +278,9 @@
                 <div class="form-field">
                     <label for="ruc"><span class="label-dot" aria-hidden="true"></span> RUC</label>
                     <input type="text" id="ruc" name="ruc" maxlength="20"
-                           class="input-modern {% if modo_edicion %}input-bloqueado{% else %}input-required{% endif %}"
+                           class="input-modern input-required"
                            placeholder="Ej: 20123456789" required autocomplete="off"
-                           value="{{ form.get('ruc', '') }}"
-                           {% if modo_edicion %}readonly tabindex="-1"{% endif %}>
+                           value="{{ form.get('ruc', '') }}">
                 </div>
 
                 <div class="form-field span-2">

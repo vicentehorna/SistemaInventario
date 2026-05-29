@@ -2,7 +2,7 @@ import logging
 import os
 import pyodbc
 import platform
-from datetime import datetime
+from datetime import date, datetime
 from flask_login import UserMixin
 from dotenv import load_dotenv
 
@@ -92,6 +92,50 @@ class DatabaseConfig:
 def get_db_connection():
     """Conexión pyodbc reutilizable (APIs, reportes)."""
     return DatabaseConfig.get_connection()
+
+
+def _parse_fecha_sql(val):
+    """Normaliza fecha devuelta por pyodbc (date, datetime o str)."""
+    if val is None:
+        return None
+    if isinstance(val, date) and not isinstance(val, datetime):
+        return val
+    if isinstance(val, datetime):
+        return val.date()
+    s = str(val).strip()
+    if not s:
+        return None
+    if 'T' in s:
+        s = s.split('T', 1)[0]
+    s = s.replace('/', '-')[:10]
+    try:
+        return date.fromisoformat(s)
+    except ValueError:
+        pass
+    for fmt in ('%d-%m-%Y', '%m-%d-%Y', '%d/%m/%Y', '%m/%d/%Y'):
+        try:
+            return datetime.strptime(s[:10], fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def get_fecha_hoy_sql():
+    """Fecha calendario según GETDATE() de SQL Server (misma referencia que la BD)."""
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute('SELECT CONVERT(date, GETDATE())')
+        row = cur.fetchone()
+        if row:
+            return _parse_fecha_sql(row[0])
+    except Exception as exc:
+        _logger_db.warning('get_fecha_hoy_sql: %s', exc)
+    finally:
+        if conn:
+            conn.close()
+    return None
 
 
 def insertar_documento_minero(datos):
@@ -2518,6 +2562,7 @@ def get_inventario_empresa_por_id(idempresa):
 
 def actualizar_inventario_empresa(
     idempresa,
+    ruc,
     razon_social,
     direccion=None,
     id_departamento=None,
@@ -2529,12 +2574,15 @@ def actualizar_inventario_empresa(
     es_proveedor=0,
     estado=1,
 ):
-    """Actualiza empresa (el RUC no se modifica)."""
+    """Actualiza empresa en Inventario_Empresas."""
     conn = None
     try:
         idempresa = int(idempresa)
     except (TypeError, ValueError):
         return False, "Empresa no válida."
+    ruc = (ruc or "").strip()
+    if not ruc:
+        return False, "El RUC es obligatorio."
     razon_social = (razon_social or "").strip()
     if not razon_social:
         return False, "La razón social es obligatoria."
@@ -2552,12 +2600,13 @@ def actualizar_inventario_empresa(
         cursor.execute(
             """
             UPDATE dbo.Inventario_Empresas
-            SET RazonSocial = ?, Direccion = ?,
+            SET RUC = ?, RazonSocial = ?, Direccion = ?,
                 IdDepartamento = ?, IdProvincia = ?, IdDistrito = ?,
                 Telefono = ?, Correo = ?, EsCliente = ?, EsProveedor = ?, Estado = ?
             WHERE IdEmpresa = ?
             """,
             (
+                ruc,
                 razon_social,
                 (direccion or "").strip() or None,
                 (id_departamento or "").strip() or None,
@@ -2580,6 +2629,8 @@ def actualizar_inventario_empresa(
         return True, "Empresa actualizada correctamente."
     except pyodbc.IntegrityError as e:
         err = str(e).lower()
+        if "uq_empresas_ruc" in err or "unique" in err:
+            return False, "Ya existe otra empresa con ese RUC."
         if "fk_empresas_distritos" in err:
             return False, "El distrito seleccionado no es válido."
         return False, "No se pudo actualizar: referencia inválida."
