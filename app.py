@@ -6,6 +6,7 @@ import logging
 import io
 import zipfile
 import base64
+import unicodedata
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 from decimal import Decimal
@@ -1827,7 +1828,10 @@ def _fecha_proforma_carta(fecha_val):
 
 def _nombre_archivo_proforma_pdf(razon_social, nro_proforma):
     """Nomenclatura: proforma_nombrecliente_nroproforma.pdf"""
-    nombre = re.sub(r'[^A-Za-z0-9]+', '_', str(razon_social or 'cliente').strip())
+    texto = str(razon_social or 'cliente').strip()
+    texto = unicodedata.normalize('NFD', texto)
+    texto = ''.join(c for c in texto if unicodedata.category(c) != 'Mn')
+    nombre = re.sub(r'[^A-Za-z0-9]+', '_', texto)
     nombre = re.sub(r'_+', '_', nombre).strip('_').lower() or 'cliente'
     nro = re.sub(r'[^A-Za-z0-9]+', '', str(nro_proforma or '').strip()) or '000000'
     return f'proforma_{nombre}_{nro}.pdf'
