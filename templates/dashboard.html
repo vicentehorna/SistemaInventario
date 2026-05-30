@@ -164,6 +164,24 @@
                 <p>Consulte ventas registradas, filtre por cliente o artículo y anule con control de stock.</p>
             </a>
         </div>
+        <div class="col-12 col-md-6 col-lg-5">
+            <a class="dash-module-card" href="{{ url_for('proformas_registro_page') }}" title="Registro de Proformas">
+                <span class="dash-module-card-icon" aria-hidden="true">
+                    <i class="bi bi-file-earmark-spreadsheet"></i>
+                </span>
+                <h3>Registro de Proformas</h3>
+                <p>Elabore cotizaciones comerciales para clientes sin afectar stock ni comprobantes contables.</p>
+            </a>
+        </div>
+        <div class="col-12 col-md-6 col-lg-5">
+            <a class="dash-module-card" href="{{ url_for('lista_proformas_page') }}" title="Lista de Proformas">
+                <span class="dash-module-card-icon" aria-hidden="true">
+                    <i class="bi bi-file-earmark-text"></i>
+                </span>
+                <h3>Lista de Proformas</h3>
+                <p>Consulte proformas emitidas, edite cotizaciones y descargue el PDF del formato comercial.</p>
+            </a>
+        </div>
     </div>
 </section>
 {% endblock %}

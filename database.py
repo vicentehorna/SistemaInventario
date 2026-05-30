@@ -2456,7 +2456,7 @@ def insertar_inventario_empresa(
     """Registra proveedor/cliente en Inventario_Empresas."""
     conn = None
     ruc = (ruc or "").strip()
-    razon_social = (razon_social or "").strip()
+    razon_social = (razon_social or "").strip().upper()
     if not ruc:
         return False, "El RUC es obligatorio."
     if not razon_social:
@@ -2583,7 +2583,7 @@ def actualizar_inventario_empresa(
     ruc = (ruc or "").strip()
     if not ruc:
         return False, "El RUC es obligatorio."
-    razon_social = (razon_social or "").strip()
+    razon_social = (razon_social or "").strip().upper()
     if not razon_social:
         return False, "La razón social es obligatoria."
     es_cliente, es_proveedor = _empresa_flags_desde_form(es_cliente, es_proveedor)
@@ -3938,6 +3938,391 @@ def anular_venta(id_venta):
             except Exception:
                 pass
         return False, "Error al anular la venta."
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+PROFORMA_COMPANY_CORRELATIVO = 'BGT'
+
+
+def _formatear_nro_proforma(correlativo):
+    """Formatea correlativo numérico a 6 dígitos (ej. 96 -> '000096')."""
+    try:
+        n = int(correlativo)
+    except (TypeError, ValueError):
+        n = 0
+    return str(n).zfill(6)
+
+
+def _lineas_proforma_desde_detalles(detalles):
+    """Valida detalle y devuelve (lineas, total) o (None, None, mensaje_error)."""
+    from decimal import Decimal, ROUND_HALF_UP
+
+    if not detalles:
+        return None, None, "Debe agregar al menos un artículo al detalle."
+
+    lineas = []
+    for d in detalles:
+        try:
+            id_item = int(d.get('id_item') or d.get('idItem'))
+            cantidad = int(d.get('cantidad'))
+            precio_unitario = Decimal(str(d.get('precio_unitario') or d.get('precioUnitario')))
+        except (TypeError, ValueError, ArithmeticError):
+            return None, None, "Línea de detalle con datos inválidos."
+        if cantidad <= 0:
+            return None, None, "La cantidad debe ser mayor a cero."
+        if precio_unitario <= 0:
+            return None, None, "El precio unitario debe ser mayor a cero."
+        total_linea = (Decimal(cantidad) * precio_unitario).quantize(
+            Decimal('0.01'), rounding=ROUND_HALF_UP
+        )
+        lineas.append({
+            'id_item': id_item,
+            'cantidad': cantidad,
+            'precio_unitario': precio_unitario,
+            'total_linea': total_linea,
+        })
+
+    total = sum((ln['total_linea'] for ln in lineas), Decimal('0.00'))
+    return lineas, total, None
+
+
+def _fecha_proforma_a_datetime(fecha_proforma):
+    if isinstance(fecha_proforma, str):
+        fecha_proforma = fecha_proforma.strip()[:10]
+    try:
+        partes = fecha_proforma.split('-')
+        return datetime(int(partes[0]), int(partes[1]), int(partes[2]))
+    except (ValueError, IndexError, AttributeError):
+        return None
+
+
+def insertar_proforma(id_cliente, fecha_proforma, detalles, company=PROFORMA_COMPANY_CORRELATIVO):
+    """
+    Registra cabecera y detalle de proforma; incrementa CorrelativoProforma en PR_mapping2.
+    No descuenta stock. detalles: lista de dicts con id_item, cantidad, precio_unitario.
+    """
+    try:
+        id_cliente = int(id_cliente)
+    except (TypeError, ValueError):
+        return False, "Cliente no válido."
+
+    lineas, total, err = _lineas_proforma_desde_detalles(detalles)
+    if err:
+        return False, err
+
+    fecha_dt = _fecha_proforma_a_datetime(fecha_proforma)
+    if not fecha_dt:
+        return False, "Fecha de proforma no válida."
+
+    company = (company or PROFORMA_COMPANY_CORRELATIVO).strip() or PROFORMA_COMPANY_CORRELATIVO
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            "SELECT 1 FROM dbo.Inventario_Empresas WHERE IdEmpresa = ? AND EsCliente = 1",
+            (id_cliente,),
+        )
+        if not cursor.fetchone():
+            cursor.close()
+            return False, "El cliente seleccionado no existe o no es cliente."
+
+        for ln in lineas:
+            cursor.execute(
+                "SELECT 1 FROM dbo.Inventario_Items WHERE IdItem = ?",
+                (ln['id_item'],),
+            )
+            if not cursor.fetchone():
+                cursor.close()
+                return False, f"Artículo IdItem {ln['id_item']} no encontrado."
+
+        cursor.execute(
+            """
+            UPDATE dbo.PR_mapping2
+            SET CorrelativoProforma = CorrelativoProforma + 1
+            OUTPUT INSERTED.CorrelativoProforma
+            WHERE company = ?
+            """,
+            (company,),
+        )
+        row_corr = cursor.fetchone()
+        if not row_corr or row_corr[0] is None:
+            conn.rollback()
+            cursor.close()
+            return False, f"No se encontró correlativo de proforma para la compañía {company}."
+        nro_proforma = _formatear_nro_proforma(row_corr[0])
+
+        cursor.execute(
+            """
+            INSERT INTO dbo.Inventario_ProformasCab (
+                NroProforma, IdCliente, FechaProforma, Total
+            )
+            OUTPUT INSERTED.IdProforma
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                nro_proforma,
+                id_cliente,
+                fecha_dt,
+                float(total),
+            ),
+        )
+        row_cab = cursor.fetchone()
+        if not row_cab:
+            conn.rollback()
+            cursor.close()
+            return False, "No se pudo registrar la proforma."
+        id_proforma = int(row_cab[0])
+
+        for ln in lineas:
+            cursor.execute(
+                """
+                INSERT INTO dbo.Inventario_ProformasDet (
+                    IdProforma, IdItem, Cantidad, PrecioUnitario, TotalLinea
+                )
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    id_proforma,
+                    ln['id_item'],
+                    ln['cantidad'],
+                    float(ln['precio_unitario']),
+                    float(ln['total_linea']),
+                ),
+            )
+
+        conn.commit()
+        cursor.close()
+        return True, f"Proforma N° {nro_proforma} registrada correctamente."
+    except pyodbc.IntegrityError as e:
+        err = str(e).lower()
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        if "uq_proformas_nro" in err or "unique" in err:
+            return False, "El número de proforma ya existe. Intente guardar nuevamente."
+        if "fk_proformas" in err:
+            return False, "Datos de referencia inválidos (cliente o artículo)."
+        return False, "No se pudo guardar la proforma: datos duplicados o referencia inválida."
+    except Exception as e:
+        _logger_db.exception("insertar_proforma: %s", e)
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        msg = str(e)
+        if 'correlativo de proforma' in msg.lower():
+            return False, f"No se encontró correlativo de proforma para la compañía {company}."
+        return False, "Error al guardar la proforma. Verifique la conexión a la base de datos."
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def get_proforma_por_id(id_proforma):
+    """Obtiene cabecera y detalle de una proforma para edición."""
+    conn = None
+    try:
+        id_proforma_i = int(id_proforma)
+    except (TypeError, ValueError):
+        return None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT
+                p.IdProforma, p.NroProforma, p.IdCliente, p.FechaProforma, p.Total,
+                e.RazonSocial, e.RUC, e.Direccion
+            FROM dbo.Inventario_ProformasCab p
+            INNER JOIN dbo.Inventario_Empresas e ON p.IdCliente = e.IdEmpresa
+            WHERE p.IdProforma = ?
+            """,
+            (id_proforma_i,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            cursor.close()
+            return None
+        columns = [col[0] for col in cursor.description]
+        cab = {k.lower(): v for k, v in dict(zip(columns, row)).items()}
+
+        cursor.execute(
+            """
+            SELECT d.IdItem, i.Codigo, i.Descripcion, d.Cantidad, d.PrecioUnitario, d.TotalLinea
+            FROM dbo.Inventario_ProformasDet d
+            INNER JOIN dbo.Inventario_Items i ON d.IdItem = i.IdItem
+            WHERE d.IdProforma = ?
+            ORDER BY d.IdProformaDet
+            """,
+            (id_proforma_i,),
+        )
+        det_cols = [col[0] for col in cursor.description]
+        detalles = []
+        for det in cursor.fetchall():
+            item = {k.lower(): v for k, v in dict(zip(det_cols, det)).items()}
+            detalles.append(item)
+        cursor.close()
+        cab['detalles'] = detalles
+        return cab
+    except Exception as e:
+        _logger_db.exception("get_proforma_por_id: %s", e)
+        return None
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def actualizar_proforma(id_proforma, id_cliente, fecha_proforma, detalles):
+    """Actualiza cabecera y detalle de proforma (sin cambiar NroProforma ni correlativo)."""
+    try:
+        id_proforma = int(id_proforma)
+        id_cliente = int(id_cliente)
+    except (TypeError, ValueError):
+        return False, "Proforma o cliente no válido."
+
+    lineas, total, err = _lineas_proforma_desde_detalles(detalles)
+    if err:
+        return False, err
+
+    fecha_dt = _fecha_proforma_a_datetime(fecha_proforma)
+    if not fecha_dt:
+        return False, "Fecha de proforma no válida."
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            "SELECT NroProforma FROM dbo.Inventario_ProformasCab WHERE IdProforma = ?",
+            (id_proforma,),
+        )
+        row_cab = cursor.fetchone()
+        if not row_cab:
+            cursor.close()
+            return False, "Proforma no encontrada."
+        nro_proforma = row_cab[0]
+
+        cursor.execute(
+            "SELECT 1 FROM dbo.Inventario_Empresas WHERE IdEmpresa = ? AND EsCliente = 1",
+            (id_cliente,),
+        )
+        if not cursor.fetchone():
+            cursor.close()
+            return False, "El cliente seleccionado no existe o no es cliente."
+
+        for ln in lineas:
+            cursor.execute(
+                "SELECT 1 FROM dbo.Inventario_Items WHERE IdItem = ?",
+                (ln['id_item'],),
+            )
+            if not cursor.fetchone():
+                cursor.close()
+                return False, f"Artículo IdItem {ln['id_item']} no encontrado."
+
+        cursor.execute(
+            """
+            UPDATE dbo.Inventario_ProformasCab
+            SET IdCliente = ?, FechaProforma = ?, Total = ?
+            WHERE IdProforma = ?
+            """,
+            (id_cliente, fecha_dt, float(total), id_proforma),
+        )
+
+        cursor.execute(
+            "DELETE FROM dbo.Inventario_ProformasDet WHERE IdProforma = ?",
+            (id_proforma,),
+        )
+
+        for ln in lineas:
+            cursor.execute(
+                """
+                INSERT INTO dbo.Inventario_ProformasDet (
+                    IdProforma, IdItem, Cantidad, PrecioUnitario, TotalLinea
+                )
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    id_proforma,
+                    ln['id_item'],
+                    ln['cantidad'],
+                    float(ln['precio_unitario']),
+                    float(ln['total_linea']),
+                ),
+            )
+
+        conn.commit()
+        cursor.close()
+        return True, f"Proforma N° {nro_proforma} actualizada correctamente."
+    except pyodbc.IntegrityError as e:
+        err = str(e).lower()
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        if "fk_proformas" in err:
+            return False, "Datos de referencia inválidos (cliente o artículo)."
+        return False, "No se pudo actualizar la proforma: referencia inválida."
+    except Exception as e:
+        _logger_db.exception("actualizar_proforma: %s", e)
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        return False, "Error al actualizar la proforma. Verifique la conexión a la base de datos."
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def get_lista_proformas_inventario(codigo='', articulo='', cliente=0):
+    """Ejecuta sp_inv_lista_proformas con filtros."""
+    conn = None
+    codigo_s = (codigo or '').strip()
+    articulo_s = (articulo or '').strip()
+    try:
+        cliente_i = int(cliente or 0)
+    except (TypeError, ValueError):
+        cliente_i = 0
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "EXEC sp_inv_lista_proformas @codigo=?, @articulo=?, @cliente=?",
+            (codigo_s, articulo_s, cliente_i),
+        )
+        columns = [col[0] for col in cursor.description]
+        rows = []
+        for row in cursor.fetchall():
+            item = {col: val for col, val in zip(columns, row)}
+            rows.append({k.lower(): v for k, v in item.items()})
+        cursor.close()
+        return rows
+    except Exception as e:
+        _logger_db.exception("get_lista_proformas_inventario: %s", e)
+        raise
     finally:
         if conn:
             try:

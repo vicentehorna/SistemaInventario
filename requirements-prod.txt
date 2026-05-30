@@ -6,3 +6,4 @@ gunicorn==23.0.0
 python-dotenv==1.0.0
 pyodbc==5.1.0
 resend==2.30.0
+weasyprint==68.1

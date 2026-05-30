@@ -94,6 +94,10 @@ from database import (
     anular_venta,
     get_venta_por_id,
     actualizar_venta,
+    insertar_proforma,
+    get_lista_proformas_inventario,
+    get_proforma_por_id,
+    actualizar_proforma,
 )
 
 load_dotenv()
@@ -124,6 +128,18 @@ login_manager.login_message_category = 'info'
 LOGO_INVENTARIO_FILE = 'LogoInventario.png'
 LOGO_EMPRESA_DEFAULT = 'logo_default.jpg'
 LOGOS_EMPRESA_DIR = os.path.join('static', 'img', 'logos')
+
+PROFORMA_EMISOR = {
+    'razon_social': 'Inversiones Horna Quintana E.I.R.L.',
+    'giro': (
+        'REPUESTOS PARA BOMBAS DE INYECCIÓN DIESEL, CONVENCIONALES Y ELECTRONICOS '
+        '– SISTEMAS COMMON RAIL, EUI, EUP Y HEUI'
+    ),
+    'direccion': 'Jr. Flor de Viento Nº 146 – Urb. Santa Isabel - Carabayllo - Lima - Lima',
+    'celular': '954 064 552',
+    'email': 'ahorna1109@yahoo.es',
+    'ruc': '20603192592',
+}
 
 
 def _company_for_logo_session():
@@ -1326,7 +1342,7 @@ def _empresas_form_desde_request():
     return {
         'idempresa': (request.form.get('idempresa') or '').strip(),
         'ruc': (request.form.get('ruc') or '').strip(),
-        'razon_social': (request.form.get('razon_social') or '').strip(),
+        'razon_social': (request.form.get('razon_social') or '').strip().upper(),
         'direccion': (request.form.get('direccion') or '').strip(),
         'id_departamento': (request.form.get('id_departamento') or '').strip(),
         'id_provincia': (request.form.get('id_provincia') or '').strip(),
@@ -1685,6 +1701,281 @@ def ventas_guardar():
             'modo_edicion': modo_edicion,
         },
     )
+
+
+@app.route('/operaciones/proformas/registro', methods=['GET'])
+@login_required
+def proformas_registro_page():
+    """Formulario de registro de proformas (cotizaciones comerciales)."""
+    ensure_user_session()
+    return render_template(
+        'proformas_registro.html',
+        clientes=get_clientes_activos(),
+        articulos=get_articulos_para_venta(),
+        fecha_actual=_fecha_hoy_app().isoformat(),
+    )
+
+
+@app.route('/operaciones/proformas/guardar', methods=['POST'])
+@login_required
+def proformas_guardar():
+    """Guarda o actualiza cabecera y detalle de proforma."""
+    ensure_user_session()
+    id_cliente = request.form.get('id_cliente')
+    fecha_proforma = request.form.get('fecha_proforma')
+    id_proforma = request.form.get('id_proforma')
+
+    detalles_raw = request.form.get('detalles_json', '[]')
+    try:
+        detalles = json.loads(detalles_raw) if detalles_raw else []
+    except json.JSONDecodeError:
+        detalles = []
+
+    if not isinstance(detalles, list):
+        detalles = []
+
+    if id_proforma:
+        ok, msg = actualizar_proforma(id_proforma, id_cliente, fecha_proforma, detalles)
+        modo_edicion = True
+    else:
+        ok, msg = insertar_proforma(id_cliente, fecha_proforma, detalles)
+        modo_edicion = False
+
+    if ok:
+        flash(msg, 'success')
+        return redirect(url_for('lista_proformas_page'))
+
+    flash(msg, 'error')
+    return render_template(
+        'proformas_registro.html',
+        clientes=get_clientes_activos(),
+        articulos=get_articulos_para_venta(),
+        fecha_actual=fecha_proforma or _fecha_hoy_app().isoformat(),
+        form_preservado={
+            'id_proforma': id_proforma,
+            'id_cliente': id_cliente,
+            'fecha_proforma': fecha_proforma,
+            'nro_proforma': request.form.get('nro_proforma') or '',
+            'detalles_json': detalles_raw,
+            'modo_edicion': modo_edicion,
+        },
+    )
+
+
+@app.route('/operaciones/proformas/editar/<int:id_proforma>', methods=['GET'])
+@login_required
+def proformas_editar_page(id_proforma):
+    """Formulario de proformas en modo edición."""
+    ensure_user_session()
+    proforma = get_proforma_por_id(id_proforma)
+    if not proforma:
+        flash('Proforma no encontrada.', 'error')
+        return redirect(url_for('lista_proformas_page'))
+
+    fecha_proforma = proforma.get('fechaproforma')
+    fecha_form = _fecha_hoy_app().isoformat()
+    if hasattr(fecha_proforma, 'strftime'):
+        fecha_form = fecha_proforma.strftime('%Y-%m-%d')
+    elif isinstance(fecha_proforma, str) and fecha_proforma:
+        fecha_form = fecha_proforma[:10]
+
+    detalles_json = json.dumps([
+        {
+            'id_item': d.get('iditem'),
+            'cantidad': d.get('cantidad'),
+            'precio_unitario': float(d.get('preciounitario') or 0),
+        }
+        for d in (proforma.get('detalles') or [])
+    ])
+
+    return render_template(
+        'proformas_registro.html',
+        clientes=get_clientes_activos(),
+        articulos=get_articulos_para_venta(),
+        fecha_actual=fecha_form,
+        form_preservado={
+            'id_proforma': proforma.get('idproforma'),
+            'id_cliente': proforma.get('idcliente'),
+            'fecha_proforma': fecha_form,
+            'nro_proforma': proforma.get('nroproforma') or '',
+            'detalles_json': detalles_json,
+            'modo_edicion': True,
+        },
+    )
+
+
+def _fecha_proforma_carta(fecha_val):
+    """Texto de fecha estilo carta: Lima, 30 de mayo del 2026."""
+    meses = (
+        'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+        'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
+    )
+    d = fecha_val
+    if isinstance(d, str):
+        d = d.strip()[:10]
+        try:
+            d = datetime.strptime(d, '%Y-%m-%d').date()
+        except ValueError:
+            return 'Lima, —'
+    elif isinstance(d, datetime):
+        d = d.date()
+    elif not isinstance(d, date):
+        return 'Lima, —'
+    mes = meses[d.month - 1] if 1 <= d.month <= 12 else '—'
+    return f'Lima, {d.day} de {mes} del {d.year}'
+
+
+def _nombre_archivo_proforma_pdf(razon_social, nro_proforma):
+    """Nomenclatura: proforma_nombrecliente_nroproforma.pdf"""
+    nombre = re.sub(r'[^A-Za-z0-9]+', '_', str(razon_social or 'cliente').strip())
+    nombre = re.sub(r'_+', '_', nombre).strip('_').lower() or 'cliente'
+    nro = re.sub(r'[^A-Za-z0-9]+', '', str(nro_proforma or '').strip()) or '000000'
+    return f'proforma_{nombre}_{nro}.pdf'
+
+
+def _fmt_monto_proforma(val):
+    try:
+        n = float(val)
+    except (TypeError, ValueError):
+        n = 0.0
+    return f'{n:,.2f}'
+
+
+def generar_pdf_proforma(id_proforma):
+    """Genera PDF de proforma en memoria (BytesIO)."""
+    proforma = get_proforma_por_id(id_proforma)
+    if not proforma:
+        raise ValueError('Proforma no encontrada.')
+
+    detalles = proforma.get('detalles') or []
+    if not detalles:
+        raise ValueError('La proforma no tiene líneas de detalle.')
+
+    lineas = []
+    for ln in detalles:
+        cantidad = int(ln.get('cantidad') or 0)
+        lineas.append({
+            'cantidad_fmt': f'{cantidad:02d}',
+            'descripcion': str(ln.get('descripcion') or '').strip(),
+            'precio_fmt': _fmt_monto_proforma(ln.get('preciounitario')),
+            'importe_fmt': _fmt_monto_proforma(ln.get('totallinea')),
+        })
+
+    ruta_logo = os.path.join(app.root_path, LOGOS_EMPRESA_DIR, LOGO_INVENTARIO_FILE)
+    if not os.path.isfile(ruta_logo):
+        for alt in (LOGO_EMPRESA_DEFAULT, 'logo_default.png'):
+            alt_path = os.path.join(app.root_path, LOGOS_EMPRESA_DIR, alt)
+            if os.path.isfile(alt_path):
+                ruta_logo = alt_path
+                break
+    logo_b64 = get_image_base64(ruta_logo)
+
+    nro_proforma = str(proforma.get('nroproforma') or '').strip()
+    contexto = {
+        'emisor': PROFORMA_EMISOR,
+        'nro_proforma': nro_proforma,
+        'fecha_texto': _fecha_proforma_carta(proforma.get('fechaproforma')),
+        'cliente_nombre': str(proforma.get('razonsocial') or '').strip(),
+        'cliente_direccion': str(proforma.get('direccion') or '').strip(),
+        'lineas': lineas,
+        'total_fmt': _fmt_monto_proforma(proforma.get('total')),
+        'logo_b64': logo_b64,
+    }
+
+    if not WEASYPRINT_AVAILABLE:
+        raise RuntimeError(
+            'WeasyPrint no está disponible en este servidor. '
+            'Instale las dependencias del sistema para generar PDF.'
+        )
+
+    html_renderizado = render_template('proforma_pdf.html', **contexto)
+    pdf_io = io.BytesIO()
+    HTML(string=html_renderizado, base_url=app.root_path).write_pdf(pdf_io)
+    pdf_io.seek(0)
+    cliente_nombre = str(proforma.get('razonsocial') or '').strip()
+    nombre_archivo = _nombre_archivo_proforma_pdf(cliente_nombre, nro_proforma)
+    return pdf_io, nombre_archivo
+
+
+@app.route('/operaciones/proformas/pdf/<int:id_proforma>')
+@login_required
+def proformas_pdf(id_proforma):
+    """Genera y descarga el PDF de una proforma."""
+    ensure_user_session()
+    try:
+        pdf_buffer, nombre_archivo = generar_pdf_proforma(id_proforma)
+    except ValueError as e:
+        flash(str(e), 'error')
+        return redirect(url_for('lista_proformas_page'))
+    except Exception as e:
+        logging.exception('proformas_pdf')
+        flash('No se pudo generar el PDF de la proforma.', 'error')
+        return redirect(url_for('lista_proformas_page'))
+
+    return send_file(
+        pdf_buffer,
+        mimetype='application/pdf',
+        as_attachment=True,
+        download_name=nombre_archivo,
+    )
+
+
+@app.route('/operaciones/proformas/lista', methods=['GET'])
+@login_required
+def lista_proformas_page():
+    """Vista de listado de proformas."""
+    ensure_user_session()
+    return render_template('lista_proformas.html', clientes=get_clientes_activos())
+
+
+@app.route('/operaciones/proformas/listado', methods=['POST'])
+@login_required
+def lista_proformas_post():
+    """JSON de proformas usando sp_inv_lista_proformas."""
+    ensure_user_session()
+    body = request.get_json(silent=True) or {}
+    codigo = str(body.get('codigo') or '').strip()
+    articulo = str(body.get('articulo') or body.get('item') or '').strip()
+    try:
+        cliente = int(body.get('cliente') or 0)
+    except (TypeError, ValueError):
+        cliente = 0
+
+    headers_es = [
+        'Cliente',
+        'Fecha proforma',
+        'Código',
+        'Artículo',
+        'Precio unitario',
+        'Cantidad',
+        'Total línea',
+    ]
+
+    try:
+        rows = get_lista_proformas_inventario(codigo, articulo, cliente)
+        data = []
+        ids = []
+        for r in rows:
+            id_proforma = r.get('idproforma')
+            try:
+                ids.append(int(id_proforma))
+            except (TypeError, ValueError):
+                ids.append(None)
+
+            fila = [
+                _jsonable_value(r.get('razonsocial')),
+                _jsonable_value(r.get('fechaproforma')),
+                _jsonable_value(r.get('codigo')),
+                _jsonable_value(r.get('descripcion')),
+                _jsonable_value(r.get('preciounitario')),
+                _jsonable_value(r.get('cantidad')),
+                _jsonable_value(r.get('totallinea')),
+            ]
+            data.append(fila)
+        return jsonify({'headers': headers_es, 'data': data, 'ids': ids})
+    except Exception as e:
+        logging.exception('lista_proformas_post')
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/operaciones/ventas/lista', methods=['GET'])

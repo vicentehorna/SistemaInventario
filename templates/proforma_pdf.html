@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Proforma {{ nro_proforma }}</title>
+    <style>
+        @page {
+            size: A4;
+            margin: 12mm 14mm 14mm 14mm;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 9.5pt;
+            color: #111;
+            line-height: 1.25;
+        }
+
+        .header-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 8px;
+        }
+
+        .header-table td {
+            vertical-align: top;
+            padding: 0;
+        }
+
+        .col-logo { width: 78px; padding-right: 8px; }
+
+        .col-logo img {
+            width: 72px;
+            height: auto;
+            max-height: 72px;
+            object-fit: contain;
+        }
+
+        .col-empresa { padding-right: 10px; }
+
+        .col-doc { width: 148px; }
+
+        .empresa-nombre {
+            font-family: "Times New Roman", Times, serif;
+            font-size: 13pt;
+            font-weight: bold;
+            margin-bottom: 3px;
+        }
+
+        .empresa-giro {
+            font-size: 8pt;
+            text-transform: uppercase;
+            margin-bottom: 4px;
+        }
+
+        .empresa-contacto {
+            font-size: 8.5pt;
+        }
+
+        .doc-box {
+            border: 1.5px solid #333;
+            border-radius: 10px;
+            padding: 8px 10px;
+            text-align: center;
+        }
+
+        .doc-box .ruc {
+            font-size: 9pt;
+            font-weight: bold;
+            margin-bottom: 2px;
+        }
+
+        .doc-box .titulo {
+            font-size: 16pt;
+            font-weight: bold;
+            letter-spacing: 0.5px;
+            margin: 2px 0;
+        }
+
+        .doc-box .numero {
+            font-size: 11pt;
+            font-weight: bold;
+            color: #c0392b;
+        }
+
+        .fecha-linea {
+            margin: 10px 0 8px;
+            font-size: 9.5pt;
+        }
+
+        .cliente-block {
+            margin-bottom: 10px;
+            font-size: 9.5pt;
+        }
+
+        .cliente-linea {
+            margin-bottom: 4px;
+        }
+
+        .cliente-linea .lbl {
+            display: inline-block;
+            min-width: 68px;
+        }
+
+        .cliente-linea .val {
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+
+        table.items {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 9pt;
+        }
+
+        table.items thead th {
+            background: #555;
+            color: #fff;
+            font-weight: bold;
+            text-align: center;
+            padding: 5px 4px;
+            border: 1px solid #444;
+        }
+
+        table.items tbody td {
+            border: 1px solid #bbb;
+            padding: 4px 5px;
+            vertical-align: top;
+        }
+
+        table.items .col-cant { width: 42px; text-align: center; }
+        table.items .col-desc { text-align: left; }
+        table.items .col-pu,
+        table.items .col-imp { width: 72px; text-align: right; }
+
+        table.items tbody tr:nth-child(even) td {
+            background: #fafafa;
+        }
+
+        .total-row {
+            margin-top: 8px;
+            text-align: right;
+            font-size: 10pt;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <table class="header-table">
+        <tr>
+            <td class="col-logo">
+                {% if logo_b64 %}
+                <img src="data:image/png;base64,{{ logo_b64 }}" alt="Logo">
+                {% endif %}
+            </td>
+            <td class="col-empresa">
+                <div class="empresa-nombre">{{ emisor.razon_social }}</div>
+                <div class="empresa-giro">{{ emisor.giro }}</div>
+                <div class="empresa-contacto">{{ emisor.direccion }}</div>
+                <div class="empresa-contacto">Celular: {{ emisor.celular }} &nbsp;|&nbsp; E-mail: {{ emisor.email }}</div>
+            </td>
+            <td class="col-doc">
+                <div class="doc-box">
+                    <div class="ruc">R.U.C. {{ emisor.ruc }}</div>
+                    <div class="titulo">PROFORMA</div>
+                    <div class="numero">Nº {{ nro_proforma }}</div>
+                </div>
+            </td>
+        </tr>
+    </table>
+
+    <div class="fecha-linea">{{ fecha_texto }}</div>
+
+    <div class="cliente-block">
+        <div class="cliente-linea">
+            <span class="lbl">Señor(es):</span>
+            <span class="val">{{ cliente_nombre }}</span>
+        </div>
+        <div class="cliente-linea">
+            <span class="lbl">Dirección:</span>
+            <span class="val">{{ cliente_direccion or '—' }}</span>
+        </div>
+    </div>
+
+    <table class="items">
+        <thead>
+            <tr>
+                <th class="col-cant">CANT.</th>
+                <th class="col-desc">DESCRIPCION</th>
+                <th class="col-pu">P. UNIT.</th>
+                <th class="col-imp">IMPORTE</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for ln in lineas %}
+            <tr>
+                <td class="col-cant">{{ ln.cantidad_fmt }}</td>
+                <td class="col-desc">{{ ln.descripcion }}</td>
+                <td class="col-pu">{{ ln.precio_fmt }}</td>
+                <td class="col-imp">{{ ln.importe_fmt }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <div class="total-row">
+        TOTAL: S/. {{ total_fmt }}
+    </div>
+</body>
+</html>

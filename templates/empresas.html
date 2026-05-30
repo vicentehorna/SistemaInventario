@@ -288,7 +288,9 @@
                     <input type="text" id="razon_social" name="razon_social" maxlength="250"
                            class="input-modern input-required"
                            placeholder="Nombre o razón social de la empresa" required
-                           value="{{ form.get('razon_social', '') }}">
+                           style="text-transform: uppercase;"
+                           autocomplete="organization"
+                           value="{{ form.get('razon_social', '')|upper }}">
                 </div>
 
                 <div class="form-field full-width">
@@ -398,6 +400,20 @@ document.addEventListener('DOMContentLoaded', function () {
     const selProv = document.getElementById('id_provincia');
     const selDist = document.getElementById('id_distrito');
     const frm = document.getElementById('frmEmpresas');
+    const inpRazon = document.getElementById('razon_social');
+
+    if (inpRazon) {
+        function normalizarRazonSocial() {
+            const inicio = inpRazon.selectionStart;
+            const fin = inpRazon.selectionEnd;
+            inpRazon.value = inpRazon.value.toUpperCase();
+            if (inicio != null && fin != null) {
+                inpRazon.setSelectionRange(inicio, fin);
+            }
+        }
+        inpRazon.addEventListener('input', normalizarRazonSocial);
+        normalizarRazonSocial();
+    }
 
     if (!selDep || !selProv || !selDist) return;
 
