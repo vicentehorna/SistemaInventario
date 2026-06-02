@@ -120,10 +120,6 @@ document.addEventListener('DOMContentLoaded', async function () {
 
     function fmtCelda(valor, idx) {
         if (valor === null || valor === undefined) return '';
-        if (idx === 1) {
-            const d = new Date(valor);
-            if (!Number.isNaN(d.getTime())) return d.toLocaleDateString('es-PE');
-        }
         if (typeof valor === 'number' && Number.isFinite(valor)) {
             if (idx === 7) return String(Math.round(valor));
             if (idx === 6 || idx === 8) {
