@@ -53,6 +53,12 @@
 
     .table-lista-ventas .accion-editar { color: #059669; }
     .table-lista-ventas .accion-anular { color: #dc3545; }
+
+    .table-lista-ventas tr.fila-totales td {
+        background-color: #f8f9fa;
+        font-weight: 700;
+        border-top: 2px solid #dee2e6;
+    }
 </style>
 {% endblock %}
 
@@ -110,6 +116,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     const URL_ANULAR = {{ url_for('ventas_anular') | tojson }};
     const URL_EDITAR_BASE = {{ url_for('ventas_editar_page', id_venta=0) | tojson }}.replace(/0$/, '');
     let lastExportVentas = null;
+    const IDX_COL_TOTAL_LINEA = 8;
 
     function escapeHtml(s) {
         return String(s || '')
@@ -131,6 +138,20 @@ document.addEventListener('DOMContentLoaded', async function () {
 
     function urlEditar(idVenta) {
         return URL_EDITAR_BASE + String(idVenta);
+    }
+
+    function sumarTotalLinea(rows) {
+        let sum = 0;
+        (rows || []).forEach(function (row) {
+            const v = row && row[IDX_COL_TOTAL_LINEA];
+            if (typeof v === 'number' && Number.isFinite(v)) {
+                sum += v;
+            } else if (v !== null && v !== undefined && v !== '') {
+                const n = parseFloat(v);
+                if (Number.isFinite(n)) sum += n;
+            }
+        });
+        return sum;
     }
 
     async function anularVenta(idVenta) {
@@ -192,6 +213,14 @@ document.addEventListener('DOMContentLoaded', async function () {
             }
             html += '</tr>';
         });
+        if (rows.length) {
+            const totalLinea = sumarTotalLinea(rows);
+            html += '<tr class="fila-totales">';
+            html += '<td colspan="8" class="text-end">Total</td>';
+            html += '<td class="text-end">' + escapeHtml(fmtCelda(totalLinea, IDX_COL_TOTAL_LINEA)) + '</td>';
+            html += '<td></td>';
+            html += '</tr>';
+        }
         tbody.innerHTML = html;
         tbody.querySelectorAll('.btn-anular-venta').forEach(function (btn) {
             btn.addEventListener('click', function () {
@@ -261,6 +290,23 @@ document.addEventListener('DOMContentLoaded', async function () {
                 }
             });
         });
+
+        if (filas.length) {
+            const totalLinea = sumarTotalLinea(filas);
+            const totalRow = ws.addRow(Array(ncols).fill(''));
+            ws.mergeCells(totalRow.number, 1, totalRow.number, ncols - 1);
+            const labelCell = ws.getCell(totalRow.number, 1);
+            labelCell.value = 'Total';
+            labelCell.font = { bold: true };
+            labelCell.alignment = { horizontal: 'right', vertical: 'middle' };
+            labelCell.border = allBorders;
+            const sumCell = ws.getCell(totalRow.number, ncols);
+            sumCell.value = totalLinea;
+            sumCell.numFmt = '#,##0.00';
+            sumCell.font = { bold: true };
+            sumCell.alignment = { horizontal: 'right', vertical: 'middle' };
+            sumCell.border = allBorders;
+        }
 
         ws.getColumn(1).width = 30;
         ws.getColumn(2).width = 16;

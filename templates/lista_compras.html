@@ -53,6 +53,12 @@
 
     .table-lista-compras .accion-editar { color: #2563eb; }
     .table-lista-compras .accion-anular { color: #dc3545; }
+
+    .table-lista-compras tr.fila-totales td {
+        background-color: #f8f9fa;
+        font-weight: 700;
+        border-top: 2px solid #dee2e6;
+    }
 </style>
 {% endblock %}
 
@@ -63,21 +69,29 @@
     </div>
     <div class="card-body">
         <form id="frmListaCompras" class="row g-2 g-lg-2 align-items-end">
-            <div class="col-12 col-md-4 col-lg-3">
+            <div class="col-12 col-md-6 col-lg-2">
                 <label for="txtCodigo" class="form-label small fw-bold text-muted">Código</label>
-                <input type="text" id="txtCodigo" class="form-control form-control-sm" placeholder="Buscar por código..." maxlength="20" autocomplete="off">
+                <input type="text" id="txtCodigo" class="form-control form-control-sm" placeholder="Código..." maxlength="20" autocomplete="off">
             </div>
-            <div class="col-12 col-md-4 col-lg-3">
+            <div class="col-12 col-md-6 col-lg-3">
                 <label for="txtArticulo" class="form-label small fw-bold text-muted">Item</label>
                 <input type="text" id="txtArticulo" class="form-control form-control-sm" placeholder="Buscar por item..." maxlength="50" autocomplete="off">
             </div>
-            <div class="col-12 col-md-4 col-lg-4">
+            <div class="col-12 col-md-6 col-lg-3">
                 <label for="selProveedor" class="form-label small fw-bold text-muted">Proveedor</label>
                 <select id="selProveedor" class="form-select form-select-sm">
                     <option value="0" selected>Todos</option>
                     {% for prov in proveedores %}
                     <option value="{{ prov.idempresa }}">{{ prov.razonsocial }} (RUC: {{ prov.ruc }})</option>
                     {% endfor %}
+                </select>
+            </div>
+            <div class="col-12 col-md-6 col-lg-4">
+                <label for="selEstadoPago" class="form-label small fw-bold text-muted">Estado de pago</label>
+                <select id="selEstadoPago" class="form-select form-select-sm">
+                    <option value="" selected>Todos</option>
+                    <option value="PENDIENTE">Pendiente</option>
+                    <option value="CANCELADO">Cancelado</option>
                 </select>
             </div>
             <div class="col-12 d-flex align-items-center flex-wrap gap-2 border-top pt-3 mt-3">
@@ -110,6 +124,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     const URL_ANULAR = {{ url_for('compras_anular') | tojson }};
     const URL_EDITAR_BASE = {{ url_for('compras_editar_page', id_compra=0) | tojson }}.replace(/0$/, '');
     let lastExportCompras = null;
+    const IDX_COL_TOTAL_LINEA = 8;
 
     function escapeHtml(s) {
         return String(s || '')
@@ -131,6 +146,20 @@ document.addEventListener('DOMContentLoaded', async function () {
 
     function urlEditar(idCompra) {
         return URL_EDITAR_BASE + String(idCompra);
+    }
+
+    function sumarTotalLinea(rows) {
+        let sum = 0;
+        (rows || []).forEach(function (row) {
+            const v = row && row[IDX_COL_TOTAL_LINEA];
+            if (typeof v === 'number' && Number.isFinite(v)) {
+                sum += v;
+            } else if (v !== null && v !== undefined && v !== '') {
+                const n = parseFloat(v);
+                if (Number.isFinite(n)) sum += n;
+            }
+        });
+        return sum;
     }
 
     async function anularCompra(idCompra) {
@@ -192,6 +221,14 @@ document.addEventListener('DOMContentLoaded', async function () {
             }
             html += '</tr>';
         });
+        if (rows.length) {
+            const totalLinea = sumarTotalLinea(rows);
+            html += '<tr class="fila-totales">';
+            html += '<td colspan="8" class="text-end">Total</td>';
+            html += '<td class="text-end">' + escapeHtml(fmtCelda(totalLinea, IDX_COL_TOTAL_LINEA)) + '</td>';
+            html += '<td></td>';
+            html += '</tr>';
+        }
         tbody.innerHTML = html;
         tbody.querySelectorAll('.btn-anular-compra').forEach(function (btn) {
             btn.addEventListener('click', function () {
@@ -229,7 +266,12 @@ document.addEventListener('DOMContentLoaded', async function () {
         ws.getRow(rowIdx).height = 26;
         rowIdx++;
 
-        const metaRow = ws.addRow(['Código', meta.codigo || '(todos)', 'Item', meta.articulo || '(todos)', 'Proveedor', meta.proveedor || 'Todos']);
+        const metaRow = ws.addRow([
+            'Código', meta.codigo || '(todos)',
+            'Item', meta.articulo || '(todos)',
+            'Proveedor', meta.proveedor || 'Todos',
+            'Estado de pago', meta.estado_pago || 'Todos',
+        ]);
         metaRow.eachCell({ includeEmpty: true }, (cell) => {
             cell.border = allBorders;
         });
@@ -262,6 +304,23 @@ document.addEventListener('DOMContentLoaded', async function () {
             });
         });
 
+        if (filas.length) {
+            const totalLinea = sumarTotalLinea(filas);
+            const totalRow = ws.addRow(Array(ncols).fill(''));
+            ws.mergeCells(totalRow.number, 1, totalRow.number, ncols - 1);
+            const labelCell = ws.getCell(totalRow.number, 1);
+            labelCell.value = 'Total';
+            labelCell.font = { bold: true };
+            labelCell.alignment = { horizontal: 'right', vertical: 'middle' };
+            labelCell.border = allBorders;
+            const sumCell = ws.getCell(totalRow.number, ncols);
+            sumCell.value = totalLinea;
+            sumCell.numFmt = '#,##0.00';
+            sumCell.font = { bold: true };
+            sumCell.alignment = { horizontal: 'right', vertical: 'middle' };
+            sumCell.border = allBorders;
+        }
+
         ws.getColumn(1).width = 30;
         ws.getColumn(2).width = 16;
         ws.getColumn(3).width = 16;
@@ -292,11 +351,13 @@ document.addEventListener('DOMContentLoaded', async function () {
         const articulo = document.getElementById('txtArticulo').value.trim();
         const proveedor = document.getElementById('selProveedor').value || '0';
         const proveedorLabel = document.getElementById('selProveedor').selectedOptions[0]?.text || 'Todos';
+        const estadoPago = document.getElementById('selEstadoPago').value || '';
+        const estadoPagoLabel = document.getElementById('selEstadoPago').selectedOptions[0]?.text || 'Todos';
         try {
             const res = await fetch(URL_REPORTE, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ codigo, articulo, proveedor })
+                body: JSON.stringify({ codigo, articulo, proveedor, estado_pago: estadoPago })
             });
             const payload = await res.json();
             if (!res.ok || payload.error) {
@@ -311,7 +372,12 @@ document.addEventListener('DOMContentLoaded', async function () {
             lastExportCompras = {
                 headers: payload.headers || [],
                 data: payload.data || [],
-                meta: { codigo, articulo, proveedor: proveedor === '0' ? 'Todos' : proveedorLabel }
+                meta: {
+                    codigo,
+                    articulo,
+                    proveedor: proveedor === '0' ? 'Todos' : proveedorLabel,
+                    estado_pago: estadoPagoLabel,
+                }
             };
             document.getElementById('btnExportExcelCompras').disabled = !payload.data || payload.data.length === 0;
         } catch (e) {

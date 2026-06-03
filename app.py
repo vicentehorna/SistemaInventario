@@ -2173,6 +2173,9 @@ def lista_compras_post():
         proveedor = int(body.get('proveedor') or 0)
     except (TypeError, ValueError):
         proveedor = 0
+    estado_pago = str(body.get('estado_pago') or body.get('estadopago') or '').strip().upper()
+    if estado_pago not in ('', 'PENDIENTE', 'CANCELADO'):
+        estado_pago = ''
 
     headers_es = [
         'Proveedor',
@@ -2187,7 +2190,7 @@ def lista_compras_post():
     ]
 
     try:
-        rows = get_lista_compras_inventario(codigo, articulo, proveedor)
+        rows = get_lista_compras_inventario(codigo, articulo, proveedor, estado_pago)
         data = []
         ids = []
         for r in rows:
