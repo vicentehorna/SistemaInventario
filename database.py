@@ -2258,6 +2258,43 @@ def eliminar_inventario_item(iditem):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
+
+        listas = []
+        cursor.execute(
+            "SELECT TOP 1 1 FROM dbo.Inventario_ComprasDet WHERE IdItem = ?",
+            (iditem,),
+        )
+        if cursor.fetchone():
+            listas.append("lista de compras")
+        cursor.execute(
+            "SELECT TOP 1 1 FROM dbo.Inventario_VentasDet WHERE IdItem = ?",
+            (iditem,),
+        )
+        if cursor.fetchone():
+            listas.append("lista de ventas")
+        cursor.execute(
+            "SELECT TOP 1 1 FROM dbo.Inventario_ProformasDet WHERE IdItem = ?",
+            (iditem,),
+        )
+        if cursor.fetchone():
+            listas.append("lista de proformas")
+
+        if listas:
+            cursor.close()
+            if len(listas) == 1:
+                msg = f"No se puede eliminar el artículo porque está registrado en la {listas[0]}."
+            elif len(listas) == 2:
+                msg = (
+                    f"No se puede eliminar el artículo porque está registrado en la "
+                    f"{listas[0]} y en la {listas[1]}."
+                )
+            else:
+                msg = (
+                    "No se puede eliminar el artículo porque está registrado en la "
+                    f"{listas[0]}, en la {listas[1]} y en la {listas[2]}."
+                )
+            return False, msg
+
         cursor.execute(
             "DELETE FROM dbo.Inventario_Items WHERE IdItem = ?",
             (iditem,),
