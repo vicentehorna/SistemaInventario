@@ -2307,6 +2307,29 @@ def eliminar_inventario_item(iditem):
                 )
             return False, msg
 
+        # Las compras/ventas anuladas conservan detalle histórico; hay que quitar esas
+        # líneas antes de borrar el artículo para no violar la FK.
+        cursor.execute(
+            """
+            DELETE d
+            FROM dbo.Inventario_ComprasDet d
+            INNER JOIN dbo.Inventario_ComprasCab c ON c.IdCompra = d.IdCompra
+            WHERE d.IdItem = ?
+              AND UPPER(LTRIM(RTRIM(ISNULL(c.EstadoCompra, '')))) = 'ANULADA'
+            """,
+            (iditem,),
+        )
+        cursor.execute(
+            """
+            DELETE d
+            FROM dbo.Inventario_VentasDet d
+            INNER JOIN dbo.Inventario_VentasCab v ON v.IdVenta = d.IdVenta
+            WHERE d.IdItem = ?
+              AND UPPER(LTRIM(RTRIM(ISNULL(v.EstadoVenta, '')))) = 'ANULADA'
+            """,
+            (iditem,),
+        )
+
         cursor.execute(
             "DELETE FROM dbo.Inventario_Items WHERE IdItem = ?",
             (iditem,),
@@ -2318,6 +2341,21 @@ def eliminar_inventario_item(iditem):
         conn.commit()
         cursor.close()
         return True, "Artículo eliminado correctamente."
+    except pyodbc.IntegrityError as e:
+        _logger_db.exception("eliminar_inventario_item: %s", e)
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        err = str(e).lower()
+        if "fk_ventasdet_items" in err or "inventario_ventasdet" in err:
+            return False, "No se puede eliminar el artículo porque está registrado en la lista de ventas."
+        if "fk_comprasdet_items" in err or "inventario_comprasdet" in err:
+            return False, "No se puede eliminar el artículo porque está registrado en la lista de compras."
+        if "fk_proformasdet_items" in err or "inventario_proformasdet" in err:
+            return False, "No se puede eliminar el artículo porque está registrado en la lista de proformas."
+        return False, "No se puede eliminar el artículo porque está referenciado en otros registros."
     except Exception as e:
         _logger_db.exception("eliminar_inventario_item: %s", e)
         if conn:
