@@ -48,7 +48,7 @@ FROM (
     INNER JOIN dbo.Inventario_ComprasCab c ON c.IdCompra = d.IdCompra
     INNER JOIN dbo.Inventario_Empresas e ON e.IdEmpresa = c.IdProveedor
     WHERE d.IdItem = @IdItem
-      AND UPPER(LTRIM(RTRIM(ISNULL(c.EstadoCompra, '')))) <> 'ANULADA'
+      AND ISNULL(c.EstadoCompra, '') <> 'ANULADA'
 
     UNION ALL
 
@@ -64,7 +64,7 @@ FROM (
     INNER JOIN dbo.Inventario_VentasCab v ON v.IdVenta = d.IdVenta
     INNER JOIN dbo.Inventario_Empresas e ON e.IdEmpresa = v.IdCliente
     WHERE d.IdItem = @IdItem
-      AND UPPER(LTRIM(RTRIM(ISNULL(v.EstadoVenta, '')))) <> 'ANULADA'
+      AND ISNULL(v.EstadoVenta, '') <> 'ANULADA'
 ) mov
 ORDER BY FechaMovimiento, Tipo, IdDetalle;
 GO
