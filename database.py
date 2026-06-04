@@ -2261,13 +2261,25 @@ def eliminar_inventario_item(iditem):
 
         listas = []
         cursor.execute(
-            "SELECT TOP 1 1 FROM dbo.Inventario_ComprasDet WHERE IdItem = ?",
+            """
+            SELECT TOP 1 1
+            FROM dbo.Inventario_ComprasDet d
+            INNER JOIN dbo.Inventario_ComprasCab c ON c.IdCompra = d.IdCompra
+            WHERE d.IdItem = ?
+              AND UPPER(LTRIM(RTRIM(ISNULL(c.EstadoCompra, '')))) <> 'ANULADA'
+            """,
             (iditem,),
         )
         if cursor.fetchone():
             listas.append("lista de compras")
         cursor.execute(
-            "SELECT TOP 1 1 FROM dbo.Inventario_VentasDet WHERE IdItem = ?",
+            """
+            SELECT TOP 1 1
+            FROM dbo.Inventario_VentasDet d
+            INNER JOIN dbo.Inventario_VentasCab v ON v.IdVenta = d.IdVenta
+            WHERE d.IdItem = ?
+              AND UPPER(LTRIM(RTRIM(ISNULL(v.EstadoVenta, '')))) <> 'ANULADA'
+            """,
             (iditem,),
         )
         if cursor.fetchone():
