@@ -59,7 +59,7 @@
     }
 
     .table-lista-articulos .col-acciones {
-        min-width: 4.5rem;
+        min-width: 6.75rem;
         white-space: nowrap;
     }
 
@@ -95,6 +95,60 @@
 
     .table-lista-articulos .accion-eliminar {
         color: #dc3545;
+    }
+
+    .table-lista-articulos .accion-historial {
+        color: #64748b;
+    }
+
+    .table-lista-articulos .accion-historial:hover {
+        color: #3498db;
+    }
+
+    .kardex-modal .nav-tabs .nav-link {
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: #64748b;
+    }
+
+    .kardex-modal .nav-tabs .nav-link.active {
+        color: #2c3e50;
+    }
+
+    .kardex-modal .table-kardex {
+        font-size: 0.78rem;
+    }
+
+    .kardex-modal .table-kardex thead th {
+        background-color: #f8f9fa;
+        font-size: 0.72rem;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+        color: #64748b;
+        white-space: nowrap;
+    }
+
+    .kardex-modal .kardex-resumen {
+        background: linear-gradient(135deg, #f8fafc 0%, #eef2ff 100%);
+        border: 1px solid #dbeafe;
+        border-radius: 0.75rem;
+        padding: 1rem 1.25rem;
+    }
+
+    .kardex-modal .kardex-resumen .kardex-formula {
+        font-size: 1rem;
+        font-weight: 700;
+        color: #1e293b;
+    }
+
+    .kardex-modal .kardex-resumen .kardex-badge-ok {
+        background-color: #dcfce7;
+        color: #166534;
+    }
+
+    .kardex-modal .kardex-resumen .kardex-badge-warn {
+        background-color: #fef3c7;
+        color: #92400e;
     }
 
     .table-lista-articulos .stock-highlight {
@@ -140,6 +194,90 @@
         </div>
     </div>
 </div>
+
+<div class="modal fade kardex-modal" id="modalHistorialItem" tabindex="-1" aria-labelledby="modalHistorialItemLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header border-0 pb-0">
+                <div>
+                    <h5 class="modal-title fw-bold text-secondary mb-1" id="modalHistorialItemLabel">
+                        <i class="fas fa-clock-rotate-left me-2 text-muted"></i>Historial de movimientos
+                    </h5>
+                    <p class="small text-muted mb-0" id="modalHistorialItemSubtitulo">—</p>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body pt-3" id="modalHistorialItemBody">
+                <div class="text-center text-muted py-5" id="modalHistorialItemLoading">
+                    <div class="spinner-border spinner-border-sm text-secondary me-2" role="status" aria-hidden="true"></div>
+                    Cargando historial...
+                </div>
+                <div class="d-none" id="modalHistorialItemContenido">
+                    <ul class="nav nav-tabs mb-3" id="tabsHistorialItem" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active" id="tab-compras-btn" data-bs-toggle="tab"
+                                    data-bs-target="#tab-compras" type="button" role="tab"
+                                    aria-controls="tab-compras" aria-selected="true">
+                                Ingresos por Compras
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="tab-ventas-btn" data-bs-toggle="tab"
+                                    data-bs-target="#tab-ventas" type="button" role="tab"
+                                    aria-controls="tab-ventas" aria-selected="false">
+                                Salidas por Ventas
+                            </button>
+                        </li>
+                    </ul>
+                    <div class="tab-content" id="tabsHistorialItemContent">
+                        <div class="tab-pane fade show active" id="tab-compras" role="tabpanel" aria-labelledby="tab-compras-btn">
+                            <div class="table-responsive">
+                                <table class="table table-sm table-hover table-bordered align-middle table-kardex mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th>Proveedor</th>
+                                            <th>Fecha</th>
+                                            <th class="text-end">P.U.</th>
+                                            <th class="text-end">Cant.</th>
+                                            <th class="text-end">Total</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="tbodyHistorialCompras"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div class="tab-pane fade" id="tab-ventas" role="tabpanel" aria-labelledby="tab-ventas-btn">
+                            <div class="table-responsive">
+                                <table class="table table-sm table-hover table-bordered align-middle table-kardex mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th>Cliente</th>
+                                            <th>Fecha</th>
+                                            <th class="text-end">P.U.</th>
+                                            <th class="text-end">Cant.</th>
+                                            <th class="text-end">Total</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="tbodyHistorialVentas"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="kardex-resumen mt-4">
+                        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+                            <div class="kardex-formula" id="kardexFormulaResumen">—</div>
+                            <span class="badge rounded-pill d-none" id="kardexBadgeCuadre"></span>
+                        </div>
+                    </div>
+                </div>
+                <div class="d-none alert alert-danger small mb-0" id="modalHistorialItemError" role="alert"></div>
+            </div>
+            <div class="modal-footer border-0 pt-0">
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cerrar</button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
@@ -148,6 +286,7 @@
 document.addEventListener('DOMContentLoaded', async function () {
     const URL_REPORTE = {{ url_for('lista_articulos_post') | tojson }};
     const URL_ELIMINAR = {{ url_for('articulos_eliminar') | tojson }};
+    const URL_HISTORIAL_BASE = {{ url_for('articulos_historial', id_item=0) | tojson }}.replace(/0$/, '');
     const URL_EDITAR_BASE = {{ url_for('articulos_editar_page', iditem=0) | tojson }}.replace(/0$/, '');
     const IDX_STICKY_1 = 0;
     const IDX_STICKY_2 = 1;
@@ -176,6 +315,108 @@ document.addEventListener('DOMContentLoaded', async function () {
 
     function urlEditar(iditem) {
         return URL_EDITAR_BASE + String(iditem);
+    }
+
+    function urlHistorial(iditem) {
+        return URL_HISTORIAL_BASE + String(iditem);
+    }
+
+    function filaHistorialVacia(mensaje, colspan) {
+        return `<tr><td colspan="${colspan}" class="text-center text-muted py-4">${escapeHtml(mensaje)}</td></tr>`;
+    }
+
+    function renderFilasHistorial(filas, tipo) {
+        if (!filas || !filas.length) {
+            return filaHistorialVacia(
+                tipo === 'compra' ? 'No hay ingresos por compras registrados.' : 'No hay salidas por ventas registradas.',
+                5
+            );
+        }
+        return filas.map(function (row) {
+            return '<tr>' +
+                `<td>${escapeHtml(row.razon_social || '')}</td>` +
+                `<td>${escapeHtml(row.fecha || '')}</td>` +
+                `<td class="text-end">${fmtCelda(row.precio_unitario)}</td>` +
+                `<td class="text-end">${fmtCelda(row.cantidad, { entero: true })}</td>` +
+                `<td class="text-end">${fmtCelda(row.total_linea)}</td>` +
+                '</tr>';
+        }).join('');
+    }
+
+    function resetModalHistorial() {
+        document.getElementById('modalHistorialItemLoading').classList.remove('d-none');
+        document.getElementById('modalHistorialItemContenido').classList.add('d-none');
+        document.getElementById('modalHistorialItemError').classList.add('d-none');
+        document.getElementById('modalHistorialItemError').textContent = '';
+        document.getElementById('tbodyHistorialCompras').innerHTML = '';
+        document.getElementById('tbodyHistorialVentas').innerHTML = '';
+        document.getElementById('kardexFormulaResumen').textContent = '—';
+        const badge = document.getElementById('kardexBadgeCuadre');
+        badge.className = 'badge rounded-pill d-none';
+        badge.textContent = '';
+    }
+
+    async function abrirHistorialArticulo(iditem, codigo, descripcion) {
+        const modalEl = document.getElementById('modalHistorialItem');
+        if (!modalEl || !window.bootstrap) return;
+
+        const modalInst = bootstrap.Modal.getOrCreateInstance(modalEl);
+        const etiquetaCodigo = codigo ? `«${codigo}»` : `ID ${iditem}`;
+        const etiquetaDesc = descripcion ? ` — ${descripcion}` : '';
+        document.getElementById('modalHistorialItemSubtitulo').textContent = etiquetaCodigo + etiquetaDesc;
+
+        resetModalHistorial();
+        modalInst.show();
+
+        try {
+            const res = await fetch(urlHistorial(iditem), { credentials: 'same-origin' });
+            const payload = await res.json();
+            if (!res.ok || !payload.ok) {
+                document.getElementById('modalHistorialItemLoading').classList.add('d-none');
+                const errBox = document.getElementById('modalHistorialItemError');
+                errBox.textContent = payload.error || 'No se pudo cargar el historial del artículo.';
+                errBox.classList.remove('d-none');
+                return;
+            }
+
+            document.getElementById('tbodyHistorialCompras').innerHTML = renderFilasHistorial(payload.compras, 'compra');
+            document.getElementById('tbodyHistorialVentas').innerHTML = renderFilasHistorial(payload.ventas, 'venta');
+
+            const tot = payload.totales || {};
+            const totalCompras = Number(tot.cantidad_compras || 0);
+            const totalVentas = Number(tot.cantidad_ventas || 0);
+            const stockCalculado = Number(tot.stock_calculado || 0);
+            const stockActual = Number(
+                tot.stock_actual != null ? tot.stock_actual : (payload.item && payload.item.stock_actual)
+            );
+
+            document.getElementById('kardexFormulaResumen').textContent =
+                `[${fmtCelda(totalCompras, { entero: true })}] − [${fmtCelda(totalVentas, { entero: true })}] = ${fmtCelda(stockCalculado, { entero: true })} · Stock actual: ${fmtCelda(stockActual, { entero: true })}`;
+
+            const badge = document.getElementById('kardexBadgeCuadre');
+            badge.classList.remove('d-none');
+            if (tot.cuadra) {
+                badge.className = 'badge rounded-pill kardex-badge-ok';
+                badge.textContent = 'Cuadra con stock maestro';
+            } else {
+                badge.className = 'badge rounded-pill kardex-badge-warn';
+                badge.textContent = 'Diferencia con stock maestro';
+            }
+
+            document.getElementById('modalHistorialItemLoading').classList.add('d-none');
+            document.getElementById('modalHistorialItemContenido').classList.remove('d-none');
+
+            const tabComprasBtn = document.getElementById('tab-compras-btn');
+            if (tabComprasBtn && window.bootstrap.Tab) {
+                bootstrap.Tab.getOrCreateInstance(tabComprasBtn).show();
+            }
+        } catch (e) {
+            console.error(e);
+            document.getElementById('modalHistorialItemLoading').classList.add('d-none');
+            const errBox = document.getElementById('modalHistorialItemError');
+            errBox.textContent = 'Error de red o del servidor al cargar el historial.';
+            errBox.classList.remove('d-none');
+        }
     }
 
     async function eliminarArticulo(iditem, codigo) {
@@ -223,6 +464,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         filas.forEach((rowVals, rowIndex) => {
             const iditem = ids[rowIndex];
             const codigo = rowVals && rowVals[IDX_STICKY_1] != null ? String(rowVals[IDX_STICKY_1]) : '';
+            const descripcion = rowVals && rowVals[IDX_STICKY_2] != null ? String(rowVals[IDX_STICKY_2]) : '';
             htmlBody += '<tr>';
             (rowVals || []).forEach((valor, index) => {
                 let sticky = '';
@@ -239,6 +481,13 @@ document.addEventListener('DOMContentLoaded', async function () {
             if (iditem != null && iditem !== '') {
                 htmlBody += `<td class="col-acciones text-center">
                     <span class="acciones-wrap">
+                        <button type="button" class="accion-icon accion-historial btn-historial-articulo"
+                                data-iditem="${escapeHtml(String(iditem))}"
+                                data-codigo="${escapeHtml(codigo)}"
+                                data-descripcion="${escapeHtml(descripcion)}"
+                                title="Historial" aria-label="Ver historial del artículo">
+                            <i class="fas fa-clock-rotate-left" aria-hidden="true"></i>
+                        </button>
                         <a href="${escapeHtml(urlEditar(iditem))}" class="accion-icon accion-editar" title="Editar" aria-label="Editar artículo">
                             <i class="bi bi-pencil" aria-hidden="true"></i>
                         </a>
@@ -254,6 +503,15 @@ document.addEventListener('DOMContentLoaded', async function () {
         });
 
         tbody.innerHTML = htmlBody;
+        tbody.querySelectorAll('.btn-historial-articulo').forEach((btn) => {
+            btn.addEventListener('click', function () {
+                const id = parseInt(this.getAttribute('data-iditem'), 10);
+                const cod = this.getAttribute('data-codigo') || '';
+                const desc = this.getAttribute('data-descripcion') || '';
+                if (!Number.isFinite(id)) return;
+                abrirHistorialArticulo(id, cod, desc);
+            });
+        });
         tbody.querySelectorAll('.btn-eliminar-articulo').forEach((btn) => {
             btn.addEventListener('click', function () {
                 const id = parseInt(this.getAttribute('data-iditem'), 10);

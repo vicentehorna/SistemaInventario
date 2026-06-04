@@ -72,6 +72,7 @@ from database import (
     get_inventario_item_por_id,
     actualizar_inventario_item,
     eliminar_inventario_item,
+    get_historial_movimientos_item,
     get_ubigeo_departamentos,
     get_ubigeo_provincias,
     get_ubigeo_distritos,
@@ -1264,6 +1265,52 @@ def articulos_eliminar():
     if ok:
         return jsonify({'ok': True, 'message': msg})
     return jsonify({'ok': False, 'error': msg}), 400
+
+
+def _fmt_movimiento_historial(row):
+    """Serializa una línea de compra/venta para el kárdex del artículo."""
+    return {
+        'razon_social': str(row.get('razonsocial') or row.get('razon_social') or '').strip(),
+        'fecha': fecha_filter(row.get('fechacompra') or row.get('fechaventa') or row.get('fecha')),
+        'precio_unitario': float(row.get('preciounitario') or row.get('precio_unitario') or 0),
+        'cantidad': int(row.get('cantidad') or 0),
+        'total_linea': float(row.get('totallinea') or row.get('total_linea') or 0),
+    }
+
+
+@app.route('/maestros/articulos/historial/<int:id_item>')
+@login_required
+def articulos_historial(id_item):
+    """Kárdex / historial de movimientos de un artículo (compras y ventas no anuladas)."""
+    ensure_user_session()
+    try:
+        data = get_historial_movimientos_item(id_item)
+        if not data:
+            return jsonify({'ok': False, 'error': 'Artículo no encontrado.'}), 404
+
+        item = data.get('item') or {}
+        totales = data.get('totales') or {}
+        return jsonify({
+            'ok': True,
+            'item': {
+                'iditem': item.get('iditem'),
+                'codigo': item.get('codigo'),
+                'descripcion': item.get('descripcion'),
+                'stock_actual': totales.get('stock_actual', 0),
+            },
+            'compras': [_fmt_movimiento_historial(r) for r in (data.get('compras') or [])],
+            'ventas': [_fmt_movimiento_historial(r) for r in (data.get('ventas') or [])],
+            'totales': {
+                'cantidad_compras': totales.get('cantidad_compras', 0),
+                'cantidad_ventas': totales.get('cantidad_ventas', 0),
+                'stock_calculado': totales.get('stock_calculado', 0),
+                'stock_actual': totales.get('stock_actual', 0),
+                'cuadra': bool(totales.get('cuadra')),
+            },
+        })
+    except Exception:
+        logging.exception('articulos_historial id_item=%s', id_item)
+        return jsonify({'ok': False, 'error': 'Error al consultar el historial del artículo.'}), 500
 
 
 @app.route('/configuracion/articulos/lista')

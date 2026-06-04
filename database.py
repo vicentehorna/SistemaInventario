@@ -2372,6 +2372,109 @@ def eliminar_inventario_item(iditem):
                 pass
 
 
+def _rows_to_dicts(cursor):
+    columns = [col[0] for col in cursor.description]
+    rows = []
+    for row in cursor.fetchall():
+        item = {col: val for col, val in zip(columns, row)}
+        rows.append({k.lower(): v for k, v in item.items()})
+    return rows
+
+
+def get_historial_movimientos_item(iditem):
+    """Kárdex del artículo: compras y ventas no anuladas con totales de cantidad."""
+    conn = None
+    try:
+        iditem = int(iditem)
+    except (TypeError, ValueError):
+        return None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT IdItem, Codigo, Descripcion, StockActual
+            FROM dbo.Inventario_Items
+            WHERE IdItem = ?
+            """,
+            (iditem,),
+        )
+        row_item = cursor.fetchone()
+        if not row_item:
+            cursor.close()
+            return None
+
+        item_cols = [col[0] for col in cursor.description]
+        item = {k.lower(): v for k, v in zip(item_cols, row_item)}
+
+        cursor.execute(
+            """
+            SELECT
+                e.RazonSocial,
+                c.FechaCompra,
+                d.PrecioUnitario,
+                d.Cantidad,
+                d.TotalLinea
+            FROM dbo.Inventario_ComprasDet d
+            INNER JOIN dbo.Inventario_ComprasCab c ON c.IdCompra = d.IdCompra
+            INNER JOIN dbo.Inventario_Empresas e ON e.IdEmpresa = c.IdProveedor
+            WHERE d.IdItem = ?
+              AND UPPER(LTRIM(RTRIM(ISNULL(c.EstadoCompra, '')))) <> 'ANULADA'
+            ORDER BY c.FechaCompra, d.IdCompraDet
+            """,
+            (iditem,),
+        )
+        compras = _rows_to_dicts(cursor)
+
+        cursor.execute(
+            """
+            SELECT
+                e.RazonSocial,
+                v.FechaVenta,
+                d.PrecioUnitario,
+                d.Cantidad,
+                d.TotalLinea
+            FROM dbo.Inventario_VentasDet d
+            INNER JOIN dbo.Inventario_VentasCab v ON v.IdVenta = d.IdVenta
+            INNER JOIN dbo.Inventario_Empresas e ON e.IdEmpresa = v.IdCliente
+            WHERE d.IdItem = ?
+              AND UPPER(LTRIM(RTRIM(ISNULL(v.EstadoVenta, '')))) <> 'ANULADA'
+            ORDER BY v.FechaVenta, d.IdVentaDet
+            """,
+            (iditem,),
+        )
+        ventas = _rows_to_dicts(cursor)
+        cursor.close()
+
+        total_compras = sum(int(r.get('cantidad') or 0) for r in compras)
+        total_ventas = sum(int(r.get('cantidad') or 0) for r in ventas)
+        stock_actual = int(item.get('stockactual') or 0)
+        stock_calculado = total_compras - total_ventas
+
+        return {
+            'item': item,
+            'compras': compras,
+            'ventas': ventas,
+            'totales': {
+                'cantidad_compras': total_compras,
+                'cantidad_ventas': total_ventas,
+                'stock_calculado': stock_calculado,
+                'stock_actual': stock_actual,
+                'cuadra': stock_calculado == stock_actual,
+            },
+        }
+    except Exception as e:
+        _logger_db.exception("get_historial_movimientos_item: %s", e)
+        raise
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
 def get_listado_articulos_inventario(codigo='', nombre=''):
     """Ejecuta sp_listadoarticulos_inventario."""
     conn = None
