@@ -13,7 +13,7 @@ FROM dbo.Inventario_ComprasDet d
 INNER JOIN dbo.Inventario_ComprasCab c ON c.IdCompra = d.IdCompra
 INNER JOIN dbo.Inventario_Empresas e ON e.IdEmpresa = c.IdProveedor
 WHERE d.IdItem = @IdItem
-  AND UPPER(LTRIM(RTRIM(ISNULL(c.EstadoCompra, '')))) <> 'ANULADA'
+  AND ISNULL(c.EstadoCompra, '') <> 'ANULADA'
 ORDER BY c.FechaCompra, d.IdCompraDet;
 GO
 
@@ -29,7 +29,7 @@ FROM dbo.Inventario_VentasDet d
 INNER JOIN dbo.Inventario_VentasCab v ON v.IdVenta = d.IdVenta
 INNER JOIN dbo.Inventario_Empresas e ON e.IdEmpresa = v.IdCliente
 WHERE d.IdItem = @IdItem
-  AND UPPER(LTRIM(RTRIM(ISNULL(v.EstadoVenta, '')))) <> 'ANULADA'
+  AND ISNULL(v.EstadoVenta, '') <> 'ANULADA'
 ORDER BY v.FechaVenta, d.IdVentaDet;
 GO
 

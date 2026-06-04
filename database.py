@@ -58,6 +58,45 @@ class DatabaseConfig:
         return connection_string
     
     @staticmethod
+    def _installed_odbc_drivers():
+        try:
+            return [d.strip() for d in pyodbc.drivers() if d and str(d).strip()]
+        except Exception:
+            return []
+
+    @staticmethod
+    def _linux_odbc_driver_candidates():
+        """Solo drivers realmente instalados (evita intentar ODBC 17 en Render/Docker)."""
+        installed = set(DatabaseConfig._installed_odbc_drivers())
+        wishlist = [
+            os.getenv('SQL_ODBC_DRIVER', '').strip(),
+            'ODBC Driver 18 for SQL Server',
+            'ODBC Driver 17 for SQL Server',
+        ]
+        candidates = []
+        seen = set()
+        for drv in wishlist:
+            if drv and drv in installed and drv not in seen:
+                seen.add(drv)
+                candidates.append(drv)
+        if not candidates:
+            for drv in sorted(installed):
+                if 'SQL Server' in drv and drv not in seen:
+                    seen.add(drv)
+                    candidates.append(drv)
+        return candidates
+
+    @staticmethod
+    def _is_missing_odbc_driver_error(exc):
+        msg = str(exc).lower()
+        return (
+            "can't open lib" in msg
+            or 'file not found' in msg
+            or 'driver manager' in msg
+            or 'driver not found' in msg
+        )
+
+    @staticmethod
     def get_connection():
         """Crea y retorna una conexión a SQL Server"""
         if platform.system() == 'Windows':
@@ -67,23 +106,23 @@ class DatabaseConfig:
                 print(f"Error al conectar con SQL Server: {e}")
                 raise
 
-        # Linux: probar 18 primero y luego 17 para mayor compatibilidad.
-        candidate_drivers = [
-            os.getenv('SQL_ODBC_DRIVER', '').strip(),
-            'ODBC Driver 18 for SQL Server',
-            'ODBC Driver 17 for SQL Server',
-        ]
-        seen = set()
+        candidates = DatabaseConfig._linux_odbc_driver_candidates()
+        if not candidates:
+            installed = DatabaseConfig._installed_odbc_drivers()
+            raise RuntimeError(
+                'No hay driver ODBC para SQL Server instalado. '
+                f'Drivers detectados: {installed or "(ninguno)"}'
+            )
+
         last_error = None
-        for drv in candidate_drivers:
-            if not drv or drv in seen:
-                continue
-            seen.add(drv)
+        for drv in candidates:
             try:
                 return pyodbc.connect(DatabaseConfig.get_connection_string(driver_override=drv))
             except Exception as e:
                 last_error = e
                 print(f"DEBUG: Falló conexión con driver '{drv}': {e}")
+                if not DatabaseConfig._is_missing_odbc_driver_error(e):
+                    raise
 
         print(f"Error al conectar con SQL Server: {last_error}")
         raise last_error
@@ -2392,11 +2431,32 @@ def get_historial_movimientos_item(iditem):
         conn = get_db_connection()
         cursor = conn.cursor()
 
+        # 1 viaje: artículo + totales calculados en SQL (filtro sargable, sin UPPER/LTRIM)
         cursor.execute(
             """
-            SELECT IdItem, Codigo, Descripcion, StockActual
-            FROM dbo.Inventario_Items
-            WHERE IdItem = ?
+            SELECT
+                i.IdItem,
+                i.Codigo,
+                i.Descripcion,
+                i.StockActual,
+                ISNULL(comp.TotalCantidad, 0) AS TotalCompras,
+                ISNULL(vent.TotalCantidad, 0) AS TotalVentas
+            FROM dbo.Inventario_Items i
+            OUTER APPLY (
+                SELECT SUM(d.Cantidad) AS TotalCantidad
+                FROM dbo.Inventario_ComprasDet d
+                INNER JOIN dbo.Inventario_ComprasCab c ON c.IdCompra = d.IdCompra
+                WHERE d.IdItem = i.IdItem
+                  AND ISNULL(c.EstadoCompra, '') <> 'ANULADA'
+            ) comp
+            OUTER APPLY (
+                SELECT SUM(d.Cantidad) AS TotalCantidad
+                FROM dbo.Inventario_VentasDet d
+                INNER JOIN dbo.Inventario_VentasCab v ON v.IdVenta = d.IdVenta
+                WHERE d.IdItem = i.IdItem
+                  AND ISNULL(v.EstadoVenta, '') <> 'ANULADA'
+            ) vent
+            WHERE i.IdItem = ?
             """,
             (iditem,),
         )
@@ -2406,51 +2466,75 @@ def get_historial_movimientos_item(iditem):
             return None
 
         item_cols = [col[0] for col in cursor.description]
-        item = {k.lower(): v for k, v in zip(item_cols, row_item)}
-
-        cursor.execute(
-            """
-            SELECT
-                e.RazonSocial,
-                c.FechaCompra,
-                d.PrecioUnitario,
-                d.Cantidad,
-                d.TotalLinea
-            FROM dbo.Inventario_ComprasDet d
-            INNER JOIN dbo.Inventario_ComprasCab c ON c.IdCompra = d.IdCompra
-            INNER JOIN dbo.Inventario_Empresas e ON e.IdEmpresa = c.IdProveedor
-            WHERE d.IdItem = ?
-              AND UPPER(LTRIM(RTRIM(ISNULL(c.EstadoCompra, '')))) <> 'ANULADA'
-            ORDER BY c.FechaCompra, d.IdCompraDet
-            """,
-            (iditem,),
-        )
-        compras = _rows_to_dicts(cursor)
-
-        cursor.execute(
-            """
-            SELECT
-                e.RazonSocial,
-                v.FechaVenta,
-                d.PrecioUnitario,
-                d.Cantidad,
-                d.TotalLinea
-            FROM dbo.Inventario_VentasDet d
-            INNER JOIN dbo.Inventario_VentasCab v ON v.IdVenta = d.IdVenta
-            INNER JOIN dbo.Inventario_Empresas e ON e.IdEmpresa = v.IdCliente
-            WHERE d.IdItem = ?
-              AND UPPER(LTRIM(RTRIM(ISNULL(v.EstadoVenta, '')))) <> 'ANULADA'
-            ORDER BY v.FechaVenta, d.IdVentaDet
-            """,
-            (iditem,),
-        )
-        ventas = _rows_to_dicts(cursor)
-        cursor.close()
-
-        total_compras = sum(int(r.get('cantidad') or 0) for r in compras)
-        total_ventas = sum(int(r.get('cantidad') or 0) for r in ventas)
+        item_row = {k.lower(): v for k, v in zip(item_cols, row_item)}
+        total_compras = int(item_row.pop('totalcompras', 0) or 0)
+        total_ventas = int(item_row.pop('totalventas', 0) or 0)
+        item = item_row
         stock_actual = int(item.get('stockactual') or 0)
         stock_calculado = total_compras - total_ventas
+
+        # 1 viaje: detalle unificado (compras + ventas) ordenado cronológicamente
+        cursor.execute(
+            """
+            SELECT
+                mov.Tipo,
+                mov.RazonSocial,
+                mov.FechaMovimiento,
+                mov.PrecioUnitario,
+                mov.Cantidad,
+                mov.TotalLinea
+            FROM (
+                SELECT
+                    CAST('COMPRA' AS VARCHAR(10)) AS Tipo,
+                    e.RazonSocial,
+                    c.FechaCompra AS FechaMovimiento,
+                    d.PrecioUnitario,
+                    d.Cantidad,
+                    d.TotalLinea,
+                    d.IdCompraDet AS IdOrden
+                FROM dbo.Inventario_ComprasDet d
+                INNER JOIN dbo.Inventario_ComprasCab c ON c.IdCompra = d.IdCompra
+                INNER JOIN dbo.Inventario_Empresas e ON e.IdEmpresa = c.IdProveedor
+                WHERE d.IdItem = ?
+                  AND ISNULL(c.EstadoCompra, '') <> 'ANULADA'
+
+                UNION ALL
+
+                SELECT
+                    CAST('VENTA' AS VARCHAR(10)) AS Tipo,
+                    e.RazonSocial,
+                    v.FechaVenta AS FechaMovimiento,
+                    d.PrecioUnitario,
+                    d.Cantidad,
+                    d.TotalLinea,
+                    d.IdVentaDet AS IdOrden
+                FROM dbo.Inventario_VentasDet d
+                INNER JOIN dbo.Inventario_VentasCab v ON v.IdVenta = d.IdVenta
+                INNER JOIN dbo.Inventario_Empresas e ON e.IdEmpresa = v.IdCliente
+                WHERE d.IdItem = ?
+                  AND ISNULL(v.EstadoVenta, '') <> 'ANULADA'
+            ) mov
+            ORDER BY mov.FechaMovimiento, mov.Tipo, mov.IdOrden
+            """,
+            (iditem, iditem),
+        )
+        compras = []
+        ventas = []
+        for row in cursor.fetchall():
+            mov = {
+                'tipo': row[0],
+                'razonsocial': row[1],
+                'fechacompra': row[2] if row[0] == 'COMPRA' else None,
+                'fechaventa': row[2] if row[0] == 'VENTA' else None,
+                'preciounitario': row[3],
+                'cantidad': row[4],
+                'totallinea': row[5],
+            }
+            if mov['tipo'] == 'COMPRA':
+                compras.append(mov)
+            else:
+                ventas.append(mov)
+        cursor.close()
 
         return {
             'item': item,
