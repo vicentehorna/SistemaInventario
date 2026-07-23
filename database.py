@@ -3107,7 +3107,11 @@ def get_lista_compras_inventario(codigo='', articulo='', proveedor=0, estado_pag
         rows = []
         for row in cursor.fetchall():
             item = {col: val for col, val in zip(columns, row)}
-            rows.append({k.lower(): v for k, v in item.items()})
+            item = {k.lower(): v for k, v in item.items()}
+            estado = str(item.get('estadocompra') or '').strip().upper()
+            if estado in ('ANULADA', 'ANULADO'):
+                continue
+            rows.append(item)
         cursor.close()
         return rows
     except Exception as e:

@@ -196,9 +196,14 @@ document.addEventListener('DOMContentLoaded', async function () {
         }).join('') + '<th class="text-center">Acciones</th></tr>';
 
         let html = '';
+        let visibles = 0;
         rows.forEach(function (row, index) {
             const idCompra = ids[index];
             const estadoCompra = String((row && row[2]) || '').toUpperCase();
+            if (estadoCompra === 'ANULADA' || estadoCompra === 'ANULADO') {
+                return;
+            }
+            visibles += 1;
             html += '<tr>';
             (row || []).forEach(function (val, idx) {
                 const align = (idx === 6 || idx === 7 || idx === 8) ? 'text-end' : '';
@@ -209,20 +214,20 @@ document.addEventListener('DOMContentLoaded', async function () {
                 html += '<span class="acciones-wrap">';
                 html += '<a href="' + escapeHtml(urlEditar(idCompra)) + '" class="accion-icon accion-editar" title="Editar">';
                 html += '<i class="bi bi-pencil" aria-hidden="true"></i></a>';
-                if (estadoCompra !== 'ANULADA') {
-                    html += '<button type="button" class="accion-icon accion-anular btn-anular-compra" data-idcompra="' + escapeHtml(String(idCompra)) + '" title="Anular">';
-                    html += '<i class="bi bi-slash-circle" aria-hidden="true"></i></button>';
-                } else {
-                    html += '<span class="text-muted">—</span>';
-                }
+                html += '<button type="button" class="accion-icon accion-anular btn-anular-compra" data-idcompra="' + escapeHtml(String(idCompra)) + '" title="Anular">';
+                html += '<i class="bi bi-slash-circle" aria-hidden="true"></i></button>';
                 html += '</span></td>';
             } else {
                 html += '<td class="text-center text-muted">—</td>';
             }
             html += '</tr>';
         });
-        if (rows.length) {
-            const totalLinea = sumarTotalLinea(rows);
+        if (visibles) {
+            const filasVisibles = (rows || []).filter(function (row) {
+                const estadoCompra = String((row && row[2]) || '').toUpperCase();
+                return estadoCompra !== 'ANULADA' && estadoCompra !== 'ANULADO';
+            });
+            const totalLinea = sumarTotalLinea(filasVisibles);
             html += '<tr class="fila-totales">';
             html += '<td colspan="8" class="text-end">Total</td>';
             html += '<td class="text-end">' + escapeHtml(fmtCelda(totalLinea, IDX_COL_TOTAL_LINEA)) + '</td>';
@@ -237,7 +242,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                 anularCompra(id);
             });
         });
-        document.getElementById('lblRowCountCompras').textContent = String(rows.length);
+        document.getElementById('lblRowCountCompras').textContent = String(visibles);
     }
 
     async function exportComprasExcel(payload, meta) {
@@ -369,9 +374,13 @@ document.addEventListener('DOMContentLoaded', async function () {
             }
             document.getElementById('cardResultadoCompras').classList.remove('d-none');
             renderizarTabla(payload);
+            const dataActivas = (payload.data || []).filter(function (row) {
+                const estadoCompra = String((row && row[2]) || '').toUpperCase();
+                return estadoCompra !== 'ANULADA' && estadoCompra !== 'ANULADO';
+            });
             lastExportCompras = {
                 headers: payload.headers || [],
-                data: payload.data || [],
+                data: dataActivas,
                 meta: {
                     codigo,
                     articulo,
@@ -379,7 +388,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                     estado_pago: estadoPagoLabel,
                 }
             };
-            document.getElementById('btnExportExcelCompras').disabled = !payload.data || payload.data.length === 0;
+            document.getElementById('btnExportExcelCompras').disabled = dataActivas.length === 0;
         } catch (e) {
             console.error(e);
             document.getElementById('cardResultadoCompras').classList.add('d-none');

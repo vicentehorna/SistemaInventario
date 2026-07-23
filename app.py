@@ -2067,6 +2067,10 @@ def lista_ventas_post():
         data = []
         ids = []
         for r in rows:
+            estado_venta = str(r.get('estadoventa') or '').strip().upper()
+            if estado_venta in ('ANULADA', 'ANULADO'):
+                continue
+
             id_venta = r.get('idventa')
             try:
                 ids.append(int(id_venta))
@@ -2241,6 +2245,10 @@ def lista_compras_post():
         data = []
         ids = []
         for r in rows:
+            estado_compra = str(r.get('estadocompra') or '').strip().upper()
+            if estado_compra in ('ANULADA', 'ANULADO'):
+                continue
+
             id_compra = r.get('idcompra')
             try:
                 ids.append(int(id_compra))
