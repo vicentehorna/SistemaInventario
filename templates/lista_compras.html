@@ -59,6 +59,18 @@
         font-weight: 700;
         border-top: 2px solid #dee2e6;
     }
+
+    .table-lista-compras tr.fila-pago-pendiente td {
+        color: #dc3545;
+    }
+
+    .table-lista-compras tr.fila-pago-pendiente .accion-editar {
+        color: #059669;
+    }
+
+    .table-lista-compras tr.fila-pago-pendiente .accion-anular {
+        color: #dc3545;
+    }
 </style>
 {% endblock %}
 
@@ -204,7 +216,9 @@ document.addEventListener('DOMContentLoaded', async function () {
                 return;
             }
             visibles += 1;
-            html += '<tr>';
+            const estadoPago = String((row && row[3]) || '').toUpperCase();
+            const filaClase = estadoPago === 'PENDIENTE' ? ' fila-pago-pendiente' : '';
+            html += '<tr class="' + filaClase.trim() + '">';
             (row || []).forEach(function (val, idx) {
                 const align = (idx === 6 || idx === 7 || idx === 8) ? 'text-end' : '';
                 html += '<td class="' + align + '">' + escapeHtml(fmtCelda(val, idx)) + '</td>';
