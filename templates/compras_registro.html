@@ -26,7 +26,34 @@
         margin: -0.25rem 0 0;
     }
 
-    .compras-view .section-header { margin-bottom: 1.75rem; }
+    .compras-view .section-header {
+        margin-bottom: 1.75rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        flex-wrap: wrap;
+        gap: 1rem;
+    }
+
+    .compras-view .btn-volver-listado {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.4rem 0.85rem;
+        font-size: 0.875rem;
+        color: #475569;
+        background-color: var(--surface);
+        border: 1px solid #cbd5e1;
+        border-radius: 6px;
+        text-decoration: none;
+        white-space: nowrap;
+        transition: all 0.2s;
+    }
+    .compras-view .btn-volver-listado:hover {
+        background-color: #f1f5f9;
+        border-color: #94a3b8;
+        color: var(--text-dark);
+    }
     .compras-view .section-header h1 {
         font-size: 1.5rem;
         font-weight: 600;
@@ -294,16 +321,27 @@
 {% block content %}
 {% set fp = form_preservado or {} %}
 {% set modo_edicion = fp.get('modo_edicion') %}
+{% set filtros_lista = fp.get('filtros_lista') or {} %}
 <div class="compras-view view-container">
     <div class="section-header">
-        <h1>{% if modo_edicion %}Editar Compra{% else %}Ingreso a Almacén / Registro de Compra{% endif %}</h1>
-        <p>{% if modo_edicion %}Actualice los datos de la compra. El stock se recalculará según el nuevo detalle.{% else %}Registre compras a proveedores. Al guardar se actualiza el stock de cada artículo ingresado.{% endif %}</p>
+        <div>
+            <h1>{% if modo_edicion %}Editar Compra{% else %}Ingreso a Almacén / Registro de Compra{% endif %}</h1>
+            <p>{% if modo_edicion %}Actualice los datos de la compra. El stock se recalculará según el nuevo detalle.{% else %}Registre compras a proveedores. Al guardar se actualiza el stock de cada artículo ingresado.{% endif %}</p>
+        </div>
+        {% if fp.get('id_compra') %}
+        <a href="{{ url_for('lista_compras_page', **filtros_lista) }}" class="btn-volver-listado">
+            <i class="bi bi-arrow-left" aria-hidden="true"></i> Volver al listado
+        </a>
+        {% endif %}
     </div>
 
     <form id="form-compra" action="{{ url_for('compras_guardar') }}" method="POST">
         {% if fp.get('id_compra') %}
         <input type="hidden" name="id_compra" value="{{ fp.get('id_compra') }}">
         {% endif %}
+        {% for clave, valor in filtros_lista.items() %}
+        <input type="hidden" name="lista_{{ clave }}" value="{{ valor }}">
+        {% endfor %}
         <input type="hidden" name="detalles_json" id="detalles_json" value="{{ fp.get('detalles_json', '[]') }}">
 
         <div class="form-card-modern">
@@ -453,7 +491,7 @@
         </div>
 
         <div class="form-card-modern form-actions" style="border: none; box-shadow: none; padding-top: 0;">
-            <a href="{{ url_for('dashboard') }}" class="btn-modern btn-secondary">Cancelar</a>
+            <a href="{% if fp.get('id_compra') %}{{ url_for('lista_compras_page', **filtros_lista) }}{% else %}{{ url_for('dashboard') }}{% endif %}" class="btn-modern btn-secondary">Cancelar</a>
             <button type="submit" class="btn-modern btn-primary" id="btn-guardar-compra">
                 <i class="bi {% if modo_edicion %}bi-pencil-square{% else %}bi-box-arrow-in-down{% endif %}" aria-hidden="true"></i>
                 {% if modo_edicion %}Guardar Cambios{% else %}Procesar Ingreso{% endif %}

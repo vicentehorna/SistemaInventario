@@ -83,27 +83,29 @@
         <form id="frmListaCompras" class="row g-2 g-lg-2 align-items-end">
             <div class="col-12 col-md-6 col-lg-2">
                 <label for="txtCodigo" class="form-label small fw-bold text-muted">Código</label>
-                <input type="text" id="txtCodigo" class="form-control form-control-sm" placeholder="Código..." maxlength="20" autocomplete="off">
+                <input type="text" id="txtCodigo" class="form-control form-control-sm" placeholder="Código..." maxlength="20" autocomplete="off" value="{{ filtros.get('codigo', '') }}">
             </div>
             <div class="col-12 col-md-6 col-lg-3">
                 <label for="txtArticulo" class="form-label small fw-bold text-muted">Item</label>
-                <input type="text" id="txtArticulo" class="form-control form-control-sm" placeholder="Buscar por item..." maxlength="50" autocomplete="off">
+                <input type="text" id="txtArticulo" class="form-control form-control-sm" placeholder="Buscar por item..." maxlength="50" autocomplete="off" value="{{ filtros.get('articulo', '') }}">
             </div>
             <div class="col-12 col-md-6 col-lg-3">
                 <label for="selProveedor" class="form-label small fw-bold text-muted">Proveedor</label>
                 <select id="selProveedor" class="form-select form-select-sm">
-                    <option value="0" selected>Todos</option>
+                    {% set prov_sel = filtros.get('proveedor', '0') %}
+                    <option value="0" {% if prov_sel == '0' %}selected{% endif %}>Todos</option>
                     {% for prov in proveedores %}
-                    <option value="{{ prov.idempresa }}">{{ prov.razonsocial }} (RUC: {{ prov.ruc }})</option>
+                    <option value="{{ prov.idempresa }}" {% if prov.idempresa|string == prov_sel %}selected{% endif %}>{{ prov.razonsocial }} (RUC: {{ prov.ruc }})</option>
                     {% endfor %}
                 </select>
             </div>
             <div class="col-12 col-md-6 col-lg-4">
                 <label for="selEstadoPago" class="form-label small fw-bold text-muted">Estado de pago</label>
                 <select id="selEstadoPago" class="form-select form-select-sm">
-                    <option value="" selected>Todos</option>
-                    <option value="PENDIENTE">Pendiente</option>
-                    <option value="CANCELADO">Cancelado</option>
+                    {% set pago_sel = filtros.get('estado_pago', '') %}
+                    <option value="" {% if not pago_sel %}selected{% endif %}>Todos</option>
+                    <option value="PENDIENTE" {% if pago_sel == 'PENDIENTE' %}selected{% endif %}>Pendiente</option>
+                    <option value="CANCELADO" {% if pago_sel == 'CANCELADO' %}selected{% endif %}>Cancelado</option>
                 </select>
             </div>
             <div class="col-12 d-flex align-items-center flex-wrap gap-2 border-top pt-3 mt-3">
@@ -136,6 +138,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     const URL_ANULAR = {{ url_for('compras_anular') | tojson }};
     const URL_EDITAR_BASE = {{ url_for('compras_editar_page', id_compra=0) | tojson }}.replace(/0$/, '');
     let lastExportCompras = null;
+    let filtrosActuales = {};
     const IDX_COL_TOTAL_LINEA = 8;
 
     function escapeHtml(s) {
@@ -157,7 +160,8 @@ document.addEventListener('DOMContentLoaded', async function () {
     }
 
     function urlEditar(idCompra) {
-        return URL_EDITAR_BASE + String(idCompra);
+        const qs = new URLSearchParams(filtrosActuales).toString();
+        return URL_EDITAR_BASE + String(idCompra) + (qs ? '?' + qs : '');
     }
 
     function sumarTotalLinea(rows) {
@@ -208,14 +212,8 @@ document.addEventListener('DOMContentLoaded', async function () {
         }).join('') + '<th class="text-center">Acciones</th></tr>';
 
         let html = '';
-        let visibles = 0;
         rows.forEach(function (row, index) {
             const idCompra = ids[index];
-            const estadoCompra = String((row && row[2]) || '').toUpperCase();
-            if (estadoCompra === 'ANULADA' || estadoCompra === 'ANULADO') {
-                return;
-            }
-            visibles += 1;
             const estadoPago = String((row && row[3]) || '').toUpperCase();
             const filaClase = estadoPago === 'PENDIENTE' ? ' fila-pago-pendiente' : '';
             html += '<tr class="' + filaClase.trim() + '">';
@@ -236,12 +234,8 @@ document.addEventListener('DOMContentLoaded', async function () {
             }
             html += '</tr>';
         });
-        if (visibles) {
-            const filasVisibles = (rows || []).filter(function (row) {
-                const estadoCompra = String((row && row[2]) || '').toUpperCase();
-                return estadoCompra !== 'ANULADA' && estadoCompra !== 'ANULADO';
-            });
-            const totalLinea = sumarTotalLinea(filasVisibles);
+        if (rows.length) {
+            const totalLinea = sumarTotalLinea(rows);
             html += '<tr class="fila-totales">';
             html += '<td colspan="8" class="text-end">Total</td>';
             html += '<td class="text-end">' + escapeHtml(fmtCelda(totalLinea, IDX_COL_TOTAL_LINEA)) + '</td>';
@@ -256,7 +250,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                 anularCompra(id);
             });
         });
-        document.getElementById('lblRowCountCompras').textContent = String(visibles);
+        document.getElementById('lblRowCountCompras').textContent = String(rows.length);
     }
 
     async function exportComprasExcel(payload, meta) {
@@ -372,6 +366,11 @@ document.addEventListener('DOMContentLoaded', async function () {
         const proveedorLabel = document.getElementById('selProveedor').selectedOptions[0]?.text || 'Todos';
         const estadoPago = document.getElementById('selEstadoPago').value || '';
         const estadoPagoLabel = document.getElementById('selEstadoPago').selectedOptions[0]?.text || 'Todos';
+        filtrosActuales = {};
+        if (codigo) filtrosActuales.codigo = codigo;
+        if (articulo) filtrosActuales.articulo = articulo;
+        if (proveedor && proveedor !== '0') filtrosActuales.proveedor = proveedor;
+        if (estadoPago) filtrosActuales.estado_pago = estadoPago;
         try {
             const res = await fetch(URL_REPORTE, {
                 method: 'POST',
@@ -388,13 +387,9 @@ document.addEventListener('DOMContentLoaded', async function () {
             }
             document.getElementById('cardResultadoCompras').classList.remove('d-none');
             renderizarTabla(payload);
-            const dataActivas = (payload.data || []).filter(function (row) {
-                const estadoCompra = String((row && row[2]) || '').toUpperCase();
-                return estadoCompra !== 'ANULADA' && estadoCompra !== 'ANULADO';
-            });
             lastExportCompras = {
                 headers: payload.headers || [],
-                data: dataActivas,
+                data: payload.data || [],
                 meta: {
                     codigo,
                     articulo,
@@ -402,7 +397,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                     estado_pago: estadoPagoLabel,
                 }
             };
-            document.getElementById('btnExportExcelCompras').disabled = dataActivas.length === 0;
+            document.getElementById('btnExportExcelCompras').disabled = !payload.data || payload.data.length === 0;
         } catch (e) {
             console.error(e);
             document.getElementById('cardResultadoCompras').classList.add('d-none');

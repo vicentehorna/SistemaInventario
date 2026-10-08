@@ -1647,9 +1647,11 @@ def compras_guardar():
             nro_dias=nro_dias,
         )
 
+    filtros_lista = _filtros_lista_compras(request.form, 'lista_') if id_compra else {}
+
     if ok:
         flash(msg, 'success')
-        return redirect(url_for('lista_compras_page'))
+        return redirect(url_for('lista_compras_page', **filtros_lista))
 
     credito_bloqueado = False
     if id_compra:
@@ -1674,6 +1676,7 @@ def compras_guardar():
             'estado_pago': estado_pago,
             'nro_dias': nro_dias,
             'credito_bloqueado': credito_bloqueado,
+            'filtros_lista': filtros_lista,
             'detalles_json': detalles_raw,
         },
     )
@@ -1682,6 +1685,23 @@ def compras_guardar():
 def _compra_credito_bloqueado(compra):
     """Días de crédito solo editables mientras la compra guardada está PENDIENTE."""
     return str(compra.get('estadopago') or '').strip().upper() == 'CANCELADO'
+
+
+def _filtros_lista_compras(source, prefijo=''):
+    """Filtros del listado de compras (para volver al listado con los mismos filtros)."""
+    filtros = {}
+    for clave in ('codigo', 'articulo', 'proveedor', 'estado_pago'):
+        valor = str(source.get(prefijo + clave) or '').strip()
+        if not valor:
+            continue
+        if clave == 'proveedor' and (not valor.isdigit() or valor == '0'):
+            continue
+        if clave == 'estado_pago':
+            valor = valor.upper()
+            if valor not in ('PENDIENTE', 'CANCELADO'):
+                continue
+        filtros[clave] = valor
+    return filtros
 
 
 @app.route('/operaciones/ventas/registro', methods=['GET'])
@@ -2178,13 +2198,14 @@ def ventas_editar_page(id_venta):
 def compras_editar_page(id_compra):
     """Formulario de compras en modo edición."""
     ensure_user_session()
+    filtros_lista = _filtros_lista_compras(request.args)
     compra = get_compra_por_id(id_compra)
     if not compra:
         flash('Compra no encontrada.', 'error')
-        return redirect(url_for('lista_compras_page'))
+        return redirect(url_for('lista_compras_page', **filtros_lista))
     if str(compra.get('estadocompra') or '').upper() == 'ANULADA':
         flash('No se puede editar una compra anulada.', 'error')
-        return redirect(url_for('lista_compras_page'))
+        return redirect(url_for('lista_compras_page', **filtros_lista))
 
     fecha_compra = compra.get('fechacompra')
     fecha_form = _fecha_hoy_app().isoformat()
@@ -2217,6 +2238,7 @@ def compras_editar_page(id_compra):
             'estado_pago': compra.get('estadopago') or 'PENDIENTE',
             'nro_dias': compra.get('nrodias') or 0,
             'credito_bloqueado': _compra_credito_bloqueado(compra),
+            'filtros_lista': filtros_lista,
             'detalles_json': detalles_json,
             'modo_edicion': True,
         },
@@ -2228,7 +2250,11 @@ def compras_editar_page(id_compra):
 def lista_compras_page():
     """Vista de listado de compras."""
     ensure_user_session()
-    return render_template('lista_compras.html', proveedores=get_proveedores_activos())
+    return render_template(
+        'lista_compras.html',
+        proveedores=get_proveedores_activos(),
+        filtros=_filtros_lista_compras(request.args),
+    )
 
 
 @app.route('/operaciones/compras/listado', methods=['POST'])
@@ -2250,7 +2276,7 @@ def lista_compras_post():
     headers_es = [
         'Proveedor',
         'Fecha compra',
-        'Estado compra',
+        'Fecha Vcto',
         'Estado pago',
         'Código',
         'Artículo',
@@ -2277,7 +2303,7 @@ def lista_compras_post():
             fila = [
                 _jsonable_value(r.get('razonsocial')),
                 _jsonable_value(r.get('fechacompra')),
-                _jsonable_value(r.get('estadocompra')),
+                _jsonable_value(r.get('fechavencimiento')),
                 _jsonable_value(r.get('estadopago')),
                 _jsonable_value(r.get('codigo')),
                 _jsonable_value(r.get('descripcion')),
