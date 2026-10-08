@@ -2,7 +2,7 @@ import logging
 import os
 import pyodbc
 import platform
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from flask_login import UserMixin
 from dotenv import load_dotenv
 
@@ -3139,7 +3139,7 @@ def get_compra_por_id(id_compra):
             """
             SELECT
                 c.IdCompra, c.IdProveedor, c.FechaCompra, c.TipoComprobante, c.NroComprobanteRef,
-                c.IncluyeIGV, c.EstadoPago, c.EstadoCompra
+                c.IncluyeIGV, c.EstadoPago, c.EstadoCompra, c.NroDias, c.FechaVencimiento
             FROM dbo.Inventario_ComprasCab c
             WHERE c.IdCompra = ?
             """,
@@ -3202,6 +3202,20 @@ def _calcular_totales_compra(detalles, incluye_igv):
     return subtotal, igv, total
 
 
+def _parse_nro_dias_credito(nro_dias):
+    """Días de crédito (entero >= 0). Retorna (valor, mensaje_error)."""
+    texto = str(nro_dias if nro_dias is not None else '').strip()
+    if not texto:
+        return 0, None
+    try:
+        valor = int(texto)
+    except (TypeError, ValueError):
+        return None, "El número de días de crédito no es válido."
+    if valor < 0:
+        return None, "El número de días de crédito no puede ser negativo."
+    return valor, None
+
+
 def insertar_compra(
     id_proveedor,
     fecha_compra,
@@ -3210,6 +3224,7 @@ def insertar_compra(
     incluye_igv,
     estado_pago,
     detalles,
+    nro_dias=0,
 ):
     """
     Registra cabecera y detalle de compra; incrementa stock por cada línea.
@@ -3267,6 +3282,11 @@ def insertar_compra(
     except (ValueError, IndexError, AttributeError):
         return False, "Fecha de compra no válida."
 
+    dias_credito, err_dias = _parse_nro_dias_credito(nro_dias)
+    if err_dias:
+        return False, err_dias
+    fecha_venc = fecha_dt + timedelta(days=dias_credito)
+
     nro_ref = (nro_comprobante_ref or '').strip() or None
 
     conn = None
@@ -3287,10 +3307,10 @@ def insertar_compra(
             INSERT INTO dbo.Inventario_ComprasCab (
                 IdProveedor, FechaCompra, TipoComprobante, NroComprobanteRef,
                 IncluyeIGV, SubTotal, IGV, Total,
-                EstadoCompra, EstadoPago
+                EstadoCompra, EstadoPago, NroDias, FechaVencimiento
             )
             OUTPUT INSERTED.IdCompra
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVA', ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVA', ?, ?, ?)
             """,
             (
                 id_proveedor,
@@ -3302,6 +3322,8 @@ def insertar_compra(
                 float(igv),
                 float(total),
                 estado_pago_val,
+                dias_credito,
+                fecha_venc,
             ),
         )
         row = cursor.fetchone()
@@ -3377,6 +3399,7 @@ def actualizar_compra(
     incluye_igv,
     estado_pago,
     detalles,
+    nro_dias=0,
 ):
     """Actualiza compra activa, recalcula detalle y ajusta stock."""
     from decimal import Decimal, ROUND_HALF_UP
@@ -3436,7 +3459,7 @@ def actualizar_compra(
 
         cursor.execute(
             """
-            SELECT EstadoCompra
+            SELECT EstadoCompra, EstadoPago, NroDias
             FROM dbo.Inventario_ComprasCab
             WHERE IdCompra = ?
             """,
@@ -3449,6 +3472,15 @@ def actualizar_compra(
         if str(row_compra[0] or '').strip().upper() == 'ANULADA':
             cursor.close()
             return False, "No se puede editar una compra anulada."
+
+        if str(row_compra[1] or '').strip().upper() == 'CANCELADO':
+            dias_credito = int(row_compra[2] or 0)
+        else:
+            dias_credito, err_dias = _parse_nro_dias_credito(nro_dias)
+            if err_dias:
+                cursor.close()
+                return False, err_dias
+        fecha_venc = fecha_dt + timedelta(days=dias_credito)
 
         cursor.execute(
             "SELECT 1 FROM dbo.Inventario_Empresas WHERE IdEmpresa = ? AND EsProveedor = 1",
@@ -3494,7 +3526,8 @@ def actualizar_compra(
             """
             UPDATE dbo.Inventario_ComprasCab
             SET IdProveedor = ?, FechaCompra = ?, TipoComprobante = ?, NroComprobanteRef = ?,
-                IncluyeIGV = ?, SubTotal = ?, IGV = ?, Total = ?, EstadoPago = ?
+                IncluyeIGV = ?, SubTotal = ?, IGV = ?, Total = ?, EstadoPago = ?,
+                NroDias = ?, FechaVencimiento = ?
             WHERE IdCompra = ?
             """,
             (
@@ -3507,6 +3540,8 @@ def actualizar_compra(
                 float(igv),
                 float(total),
                 estado_pago_val,
+                dias_credito,
+                fecha_venc,
                 id_compra,
             ),
         )

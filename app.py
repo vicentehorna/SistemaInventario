@@ -1612,6 +1612,7 @@ def compras_guardar():
     nro_comprobante_ref = request.form.get('nro_comprobante_ref')
     incluye_igv = request.form.get('incluye_igv') in ('on', '1', 'true', 'True')
     estado_pago = request.form.get('estado_pago')
+    nro_dias = request.form.get('nro_dias')
 
     detalles_raw = request.form.get('detalles_json', '[]')
     try:
@@ -1632,6 +1633,7 @@ def compras_guardar():
             incluye_igv,
             estado_pago,
             detalles,
+            nro_dias=nro_dias,
         )
     else:
         ok, msg = insertar_compra(
@@ -1642,11 +1644,19 @@ def compras_guardar():
             incluye_igv,
             estado_pago,
             detalles,
+            nro_dias=nro_dias,
         )
 
     if ok:
         flash(msg, 'success')
         return redirect(url_for('lista_compras_page'))
+
+    credito_bloqueado = False
+    if id_compra:
+        compra_guardada = get_compra_por_id(id_compra)
+        if compra_guardada and _compra_credito_bloqueado(compra_guardada):
+            credito_bloqueado = True
+            nro_dias = compra_guardada.get('nrodias') or 0
 
     flash(msg, 'error')
     return render_template(
@@ -1662,9 +1672,16 @@ def compras_guardar():
             'nro_comprobante_ref': nro_comprobante_ref,
             'incluye_igv': incluye_igv,
             'estado_pago': estado_pago,
+            'nro_dias': nro_dias,
+            'credito_bloqueado': credito_bloqueado,
             'detalles_json': detalles_raw,
         },
     )
+
+
+def _compra_credito_bloqueado(compra):
+    """Días de crédito solo editables mientras la compra guardada está PENDIENTE."""
+    return str(compra.get('estadopago') or '').strip().upper() == 'CANCELADO'
 
 
 @app.route('/operaciones/ventas/registro', methods=['GET'])
@@ -2198,6 +2215,8 @@ def compras_editar_page(id_compra):
             'nro_comprobante_ref': compra.get('nrocomprobanteref') or '',
             'incluye_igv': bool(compra.get('incluyeigv')),
             'estado_pago': compra.get('estadopago') or 'PENDIENTE',
+            'nro_dias': compra.get('nrodias') or 0,
+            'credito_bloqueado': _compra_credito_bloqueado(compra),
             'detalles_json': detalles_json,
             'modo_edicion': True,
         },

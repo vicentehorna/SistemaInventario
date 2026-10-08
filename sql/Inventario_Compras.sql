@@ -20,6 +20,8 @@ CREATE TABLE Inventario_ComprasCab (
     EstadoCompra VARCHAR(15) NOT NULL CONSTRAINT DF_Compras_Estado DEFAULT 'ACTIVA',
     EstadoPago VARCHAR(15) NOT NULL CONSTRAINT DF_Compras_EstadoPago DEFAULT 'PENDIENTE',
     FechaRegistro DATETIME CONSTRAINT DF_Compras_FechaReg DEFAULT GETDATE(),
+    NroDias INT NOT NULL CONSTRAINT DF_Compras_NroDias DEFAULT 0,
+    FechaVencimiento DATETIME NULL,
     CONSTRAINT PK_Inventario_ComprasCab PRIMARY KEY CLUSTERED (IdCompra),
     CONSTRAINT FK_ComprasCab_Empresas FOREIGN KEY (IdProveedor)
         REFERENCES Inventario_Empresas (IdEmpresa)

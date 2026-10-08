@@ -65,7 +65,13 @@
 
     .compras-view .grid-cabecera-sec {
         margin-top: 1.25rem;
-        grid-template-columns: 1fr 1fr 2fr;
+        grid-template-columns: 1fr 1fr 1fr 1fr;
+    }
+
+    .compras-view .input-modern[readonly] {
+        background-color: #f1f5f9;
+        color: var(--text-muted);
+        cursor: default;
     }
 
     .compras-view .grid-selector-item {
@@ -361,6 +367,21 @@
                         <option value="PENDIENTE" {% if pago_sel == 'PENDIENTE' %}selected{% endif %}>Pendiente</option>
                         <option value="CANCELADO" {% if pago_sel == 'CANCELADO' %}selected{% endif %}>Cancelado</option>
                     </select>
+                </div>
+
+                {% set credito_bloqueado = fp.get('credito_bloqueado') %}
+                <div class="form-field">
+                    <label for="nro_dias">Días de Crédito</label>
+                    <input type="number" id="nro_dias" name="nro_dias"
+                           class="input-modern{% if not credito_bloqueado %} input-required{% endif %}" required
+                           min="0" step="1" value="{{ fp.get('nro_dias') if fp.get('nro_dias') not in (None, '') else 0 }}"
+                           {% if credito_bloqueado %}readonly tabindex="-1" title="No editable: la compra ya está cancelada"{% endif %}>
+                </div>
+
+                <div class="form-field">
+                    <label for="fecha_vencimiento">Fecha de Vencimiento</label>
+                    <input type="date" id="fecha_vencimiento" class="input-modern" readonly tabindex="-1"
+                           title="Fecha de compra + días de crédito">
                 </div>
             </div>
         </div>
@@ -680,6 +701,32 @@
             console.warn('No se pudieron restaurar detalles:', e);
         }
     }
+
+    const fechaCompra = document.getElementById('fecha_compra');
+    const nroDias = document.getElementById('nro_dias');
+    const fechaVencimiento = document.getElementById('fecha_vencimiento');
+
+    function actualizarFechaVencimiento() {
+        const partes = String(fechaCompra.value || '').split('-');
+        if (partes.length !== 3) {
+            fechaVencimiento.value = '';
+            return;
+        }
+        let dias = parseInt(nroDias.value, 10);
+        if (!Number.isFinite(dias) || dias < 0) dias = 0;
+        const fecha = new Date(Date.UTC(parseInt(partes[0], 10), parseInt(partes[1], 10) - 1, parseInt(partes[2], 10)));
+        if (isNaN(fecha.getTime())) {
+            fechaVencimiento.value = '';
+            return;
+        }
+        fecha.setUTCDate(fecha.getUTCDate() + dias);
+        fechaVencimiento.value = fecha.toISOString().slice(0, 10);
+    }
+
+    fechaCompra.addEventListener('change', actualizarFechaVencimiento);
+    fechaCompra.addEventListener('input', actualizarFechaVencimiento);
+    nroDias.addEventListener('input', actualizarFechaVencimiento);
+    actualizarFechaVencimiento();
 
     document.getElementById('btn-agregar-item').addEventListener('click', agregarFilaItem);
     buscadorItem.addEventListener('input', function () {
