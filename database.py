@@ -3463,18 +3463,25 @@ def actualizar_compra(
             (id_compra,),
         )
         old_det = cursor.fetchall()
+        delta_stock = {}
         for od in old_det:
             od_item = int(od[0])
             od_qty = int(od[1] or 0)
-            if od_qty <= 0:
+            delta_stock[od_item] = delta_stock.get(od_item, 0) - od_qty
+        for ln in lineas:
+            delta_stock[ln['id_item']] = delta_stock.get(ln['id_item'], 0) + ln['cantidad']
+
+        for id_item, delta in delta_stock.items():
+            if delta >= 0:
                 continue
+            reducir = -delta
             cursor.execute(
                 """
                 UPDATE dbo.Inventario_Items
                 SET StockActual = StockActual - ?
                 WHERE IdItem = ? AND StockActual >= ?
                 """,
-                (od_qty, od_item, od_qty),
+                (reducir, id_item, reducir),
             )
             if cursor.rowcount == 0:
                 conn.rollback()
@@ -3525,13 +3532,17 @@ def actualizar_compra(
                     float(ln['total_linea']),
                 ),
             )
+
+        for id_item, delta in delta_stock.items():
+            if delta <= 0:
+                continue
             cursor.execute(
                 """
                 UPDATE dbo.Inventario_Items
                 SET StockActual = StockActual + ?
                 WHERE IdItem = ?
                 """,
-                (ln['cantidad'], ln['id_item']),
+                (delta, id_item),
             )
 
         conn.commit()
