@@ -4208,6 +4208,78 @@ def get_lista_ventas_inventario(codigo='', articulo='', cliente=0):
                 pass
 
 
+def _fecha_filtro_reporte(valor, nombre):
+    """Convierte un valor de filtro a date (YYYY-MM-DD)."""
+    if isinstance(valor, datetime):
+        return valor.date()
+    if isinstance(valor, date):
+        return valor
+    s = str(valor or '').strip()[:10]
+    try:
+        return datetime.strptime(s, '%Y-%m-%d').date()
+    except ValueError:
+        raise ValueError(f'{nombre} no válida.')
+
+
+def get_reporte_ventas_por_periodo(fecha_desde, fecha_hasta, cliente=0):
+    """
+    Ítems vendidos en un rango de fechas, agrupados y ordenados por cantidad descendente.
+    Excluye ventas anuladas. cliente=0 incluye todos los clientes.
+    """
+    try:
+        cliente_i = int(cliente or 0)
+    except (TypeError, ValueError):
+        cliente_i = 0
+
+    desde = _fecha_filtro_reporte(fecha_desde, 'Fecha desde')
+    hasta = _fecha_filtro_reporte(fecha_hasta, 'Fecha hasta')
+    if desde > hasta:
+        raise ValueError('La fecha desde no puede ser mayor que la fecha hasta.')
+
+    desde_dt = datetime(desde.year, desde.month, desde.day)
+    hasta_exc = datetime(hasta.year, hasta.month, hasta.day) + timedelta(days=1)
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT
+                i.Codigo AS Codigo,
+                i.Descripcion AS Descripcion,
+                MAX(v.FechaVenta) AS FechaUltimaVenta,
+                SUM(d.Cantidad) AS Cantidad
+            FROM dbo.Inventario_VentasDet d
+            INNER JOIN dbo.Inventario_VentasCab v ON v.IdVenta = d.IdVenta
+            INNER JOIN dbo.Inventario_Items i ON i.IdItem = d.IdItem
+            WHERE UPPER(LTRIM(RTRIM(ISNULL(v.EstadoVenta, '')))) NOT IN ('ANULADA', 'ANULADO')
+              AND v.FechaVenta >= ?
+              AND v.FechaVenta < ?
+              AND (? = 0 OR v.IdCliente = ?)
+            GROUP BY i.IdItem, i.Codigo, i.Descripcion
+            ORDER BY SUM(d.Cantidad) DESC, i.Descripcion
+            """,
+            (desde_dt, hasta_exc, cliente_i, cliente_i),
+        )
+        columns = [col[0] for col in cursor.description]
+        rows = []
+        for row in cursor.fetchall():
+            item = {col: val for col, val in zip(columns, row)}
+            rows.append({k.lower(): v for k, v in item.items()})
+        cursor.close()
+        return rows
+    except Exception as e:
+        _logger_db.exception("get_reporte_ventas_por_periodo: %s", e)
+        raise
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
 def anular_venta(id_venta):
     """Anula una venta activa y devuelve el stock del detalle al almacén."""
     conn = None

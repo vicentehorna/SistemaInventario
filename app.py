@@ -93,6 +93,7 @@ from database import (
     get_articulos_para_venta,
     insertar_venta,
     get_lista_ventas_inventario,
+    get_reporte_ventas_por_periodo,
     anular_venta,
     get_venta_por_id,
     actualizar_venta,
@@ -2129,6 +2130,63 @@ def lista_ventas_post():
         return jsonify({'headers': headers_es, 'data': data, 'ids': ids})
     except Exception as e:
         logging.exception('lista_ventas_post')
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/reportes/ventas-por-periodo', methods=['GET'])
+@login_required
+def reporte_ventas_periodo_page():
+    """Reporte de ítems vendidos en un rango de fechas, ordenados por cantidad."""
+    ensure_user_session()
+    hoy = _fecha_hoy_app()
+    return render_template(
+        'reporte_ventas_periodo.html',
+        clientes=get_clientes_activos(),
+        fecha_desde=date(hoy.year, 1, 1).isoformat(),
+        fecha_hasta=hoy.isoformat(),
+    )
+
+
+@app.route('/reportes/ventas-por-periodo/listado', methods=['POST'])
+@login_required
+def reporte_ventas_periodo_post():
+    """JSON del reporte Ventas por Periodo."""
+    ensure_user_session()
+    body = request.get_json(silent=True) or {}
+    fecha_desde = str(body.get('fecha_desde') or '').strip()
+    fecha_hasta = str(body.get('fecha_hasta') or '').strip()
+    try:
+        cliente = int(body.get('cliente') or 0)
+    except (TypeError, ValueError):
+        cliente = 0
+
+    headers_es = [
+        'Código del Item',
+        'Descripción del Item',
+        'Fecha Última Venta',
+        'Cantidad',
+    ]
+
+    try:
+        rows = get_reporte_ventas_por_periodo(fecha_desde, fecha_hasta, cliente)
+        data = []
+        for r in rows:
+            cantidad = r.get('cantidad')
+            try:
+                cantidad = int(cantidad or 0)
+            except (TypeError, ValueError):
+                cantidad = 0
+            data.append([
+                _jsonable_value(r.get('codigo')),
+                _jsonable_value(r.get('descripcion')),
+                _jsonable_value(r.get('fechaultimaventa')),
+                cantidad,
+            ])
+        return jsonify({'headers': headers_es, 'data': data})
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        logging.exception('reporte_ventas_periodo_post')
         return jsonify({'error': str(e)}), 500
 
 

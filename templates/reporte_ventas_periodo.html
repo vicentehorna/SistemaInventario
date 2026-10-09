@@ -1,0 +1,201 @@
+{% extends "layout.html" %}
+
+{% block title %}Ventas por Periodo{% endblock %}
+
+{% block extra_css %}
+<style>
+    .table-scroll-container {
+        max-height: 65vh;
+        overflow: auto;
+        border: 1px solid #dee2e6;
+    }
+
+    .table-reporte-ventas {
+        font-size: 12px;
+        margin-bottom: 0;
+    }
+
+    .table-reporte-ventas th,
+    .table-reporte-ventas td {
+        padding: 0.35rem 0.55rem;
+        vertical-align: middle;
+    }
+
+    .table-reporte-ventas thead th {
+        position: sticky;
+        top: 0;
+        background-color: #f8f9fa;
+        z-index: 2;
+        box-shadow: 0 1px 0 #dee2e6;
+    }
+
+    .table-reporte-ventas tr.fila-totales td {
+        background-color: #f8f9fa;
+        font-weight: 700;
+        border-top: 2px solid #dee2e6;
+    }
+
+    .table-reporte-ventas tr.fila-mas-vendido td {
+        background-color: #ecfdf5;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card shadow-sm border-0 mb-4">
+    <div class="card-header bg-white border-bottom-0 pt-4 pb-0">
+        <h5 class="mb-0 fw-bold text-secondary"><i class="bi bi-bar-chart-line"></i> Ventas por Periodo</h5>
+        <p class="text-muted small mb-0 mt-2">Ítems vendidos en el periodo, ordenados de mayor a menor cantidad.</p>
+    </div>
+    <div class="card-body">
+        <form id="frmReporteVentasPeriodo" class="row g-2 g-lg-2 align-items-end">
+            <div class="col-12 col-md-4 col-lg-3">
+                <label for="txtFechaDesde" class="form-label small fw-bold text-muted">Desde</label>
+                <input type="date" id="txtFechaDesde" class="form-control form-control-sm" required value="{{ fecha_desde }}">
+            </div>
+            <div class="col-12 col-md-4 col-lg-3">
+                <label for="txtFechaHasta" class="form-label small fw-bold text-muted">Hasta</label>
+                <input type="date" id="txtFechaHasta" class="form-control form-control-sm" required value="{{ fecha_hasta }}">
+            </div>
+            <div class="col-12 col-md-4 col-lg-4">
+                <label for="selCliente" class="form-label small fw-bold text-muted">Cliente</label>
+                <select id="selCliente" class="form-select form-select-sm">
+                    <option value="0" selected>Todos</option>
+                    {% for cli in clientes %}
+                    <option value="{{ cli.idempresa }}">{{ cli.razonsocial }} (RUC: {{ cli.ruc }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-12 d-flex align-items-center flex-wrap gap-2 border-top pt-3 mt-3">
+                <button type="submit" class="btn btn-primary btn-sm px-4"><i class="bi bi-search"></i> Consultar</button>
+                <span class="ms-auto text-muted small fw-bold">No. de Registros: <span id="lblRowCount">0</span></span>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card shadow-sm border-0 d-none" id="cardResultado">
+    <div class="card-body">
+        <h4 class="text-center fw-bold mb-3">VENTAS POR PERIODO</h4>
+        <div class="table-scroll-container">
+            <table class="table table-bordered table-sm table-hover table-reporte-ventas align-middle">
+                <thead id="thead-reporte"></thead>
+                <tbody id="tbody-reporte"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', async function () {
+    const URL_REPORTE = {{ url_for('reporte_ventas_periodo_post') | tojson }};
+    const IDX_CANTIDAD = 3;
+
+    function escapeHtml(s) {
+        return String(s || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    function fmtCantidad(valor) {
+        const n = typeof valor === 'number' ? valor : parseFloat(valor);
+        if (!Number.isFinite(n)) return '';
+        return Math.round(n).toLocaleString('es-PE');
+    }
+
+    function sumarCantidad(rows) {
+        let sum = 0;
+        (rows || []).forEach(function (row) {
+            const n = parseFloat(row && row[IDX_CANTIDAD]);
+            if (Number.isFinite(n)) sum += n;
+        });
+        return sum;
+    }
+
+    function renderizarTabla(payload) {
+        const thead = document.getElementById('thead-reporte');
+        const tbody = document.getElementById('tbody-reporte');
+        const headers = payload.headers || [];
+        const rows = payload.data || [];
+
+        thead.innerHTML = '<tr>' + headers.map(function (h, idx) {
+            const align = idx === IDX_CANTIDAD ? ' class="text-end"' : '';
+            return '<th' + align + '>' + escapeHtml(h) + '</th>';
+        }).join('') + '</tr>';
+
+        if (!rows.length) {
+            tbody.innerHTML = '<tr><td colspan="' + headers.length + '" class="text-center text-muted py-3">No hay ventas en el periodo seleccionado.</td></tr>';
+            document.getElementById('lblRowCount').textContent = '0';
+            return;
+        }
+
+        let html = '';
+        rows.forEach(function (row, index) {
+            html += '<tr' + (index === 0 ? ' class="fila-mas-vendido"' : '') + '>';
+            (row || []).forEach(function (val, idx) {
+                const align = idx === IDX_CANTIDAD ? 'text-end' : '';
+                const texto = idx === IDX_CANTIDAD ? fmtCantidad(val) : (val === null || val === undefined ? '' : String(val));
+                html += '<td class="' + align + '">' + escapeHtml(texto) + '</td>';
+            });
+            html += '</tr>';
+        });
+
+        html += '<tr class="fila-totales">';
+        html += '<td colspan="3" class="text-end">Total</td>';
+        html += '<td class="text-end">' + escapeHtml(fmtCantidad(sumarCantidad(rows))) + '</td>';
+        html += '</tr>';
+        tbody.innerHTML = html;
+        document.getElementById('lblRowCount').textContent = String(rows.length);
+    }
+
+    async function ejecutarConsulta() {
+        const fechaDesde = document.getElementById('txtFechaDesde').value;
+        const fechaHasta = document.getElementById('txtFechaHasta').value;
+        const cliente = document.getElementById('selCliente').value || '0';
+        if (!fechaDesde || !fechaHasta) {
+            alert('Indique el rango de fechas.');
+            return;
+        }
+        if (fechaDesde > fechaHasta) {
+            alert('La fecha desde no puede ser mayor que la fecha hasta.');
+            return;
+        }
+        try {
+            const res = await fetch(URL_REPORTE, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    fecha_desde: fechaDesde,
+                    fecha_hasta: fechaHasta,
+                    cliente: cliente
+                })
+            });
+            const payload = await res.json();
+            if (!res.ok || payload.error) {
+                document.getElementById('cardResultado').classList.add('d-none');
+                document.getElementById('lblRowCount').textContent = '0';
+                alert(payload.error || 'Error al consultar el reporte.');
+                return;
+            }
+            document.getElementById('cardResultado').classList.remove('d-none');
+            renderizarTabla(payload);
+        } catch (e) {
+            console.error(e);
+            document.getElementById('cardResultado').classList.add('d-none');
+            document.getElementById('lblRowCount').textContent = '0';
+            alert('Error de red o del servidor.');
+        }
+    }
+
+    document.getElementById('frmReporteVentasPeriodo').addEventListener('submit', async function (e) {
+        e.preventDefault();
+        await ejecutarConsulta();
+    });
+
+    await ejecutarConsulta();
+});
+</script>
+{% endblock %}

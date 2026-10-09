@@ -461,6 +461,17 @@
                         </a>
                     </li>
 
+                    <li class="py-0">
+                        <p class="sidebar-section-title text-uppercase fw-bold opacity-50">Reportes</p>
+                    </li>
+
+                    <li class="{{ 'active' if request.endpoint == 'reporte_ventas_periodo_page' else '' }}">
+                        <a href="{{ url_for('reporte_ventas_periodo_page') }}" class="sidebar-link" title="Ventas por Periodo">
+                            <i class="bi bi-bar-chart-line sidebar-icon" aria-hidden="true"></i>
+                            <span class="sidebar-link-text">Ventas por Periodo</span>
+                        </a>
+                    </li>
+
                     <hr class="mx-3 opacity-25 mt-3 mb-2">
 
                     <li>
