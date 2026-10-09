@@ -4249,7 +4249,8 @@ def get_reporte_ventas_por_periodo(fecha_desde, fecha_hasta, cliente=0):
                 i.Codigo AS Codigo,
                 i.Descripcion AS Descripcion,
                 MAX(v.FechaVenta) AS FechaUltimaVenta,
-                SUM(d.Cantidad) AS Cantidad
+                SUM(d.Cantidad) AS Cantidad,
+                i.StockActual AS StockActual
             FROM dbo.Inventario_VentasDet d
             INNER JOIN dbo.Inventario_VentasCab v ON v.IdVenta = d.IdVenta
             INNER JOIN dbo.Inventario_Items i ON i.IdItem = d.IdItem
@@ -4257,7 +4258,7 @@ def get_reporte_ventas_por_periodo(fecha_desde, fecha_hasta, cliente=0):
               AND v.FechaVenta >= ?
               AND v.FechaVenta < ?
               AND (? = 0 OR v.IdCliente = ?)
-            GROUP BY i.IdItem, i.Codigo, i.Descripcion
+            GROUP BY i.IdItem, i.Codigo, i.Descripcion, i.StockActual
             ORDER BY SUM(d.Cantidad) DESC, i.Descripcion
             """,
             (desde_dt, hasta_exc, cliente_i, cliente_i),

@@ -2165,6 +2165,7 @@ def reporte_ventas_periodo_post():
         'Descripción del Item',
         'Fecha Última Venta',
         'Cantidad',
+        'Stock Actual',
     ]
 
     try:
@@ -2172,15 +2173,21 @@ def reporte_ventas_periodo_post():
         data = []
         for r in rows:
             cantidad = r.get('cantidad')
+            stock = r.get('stockactual')
             try:
                 cantidad = int(cantidad or 0)
             except (TypeError, ValueError):
                 cantidad = 0
+            try:
+                stock = int(stock or 0)
+            except (TypeError, ValueError):
+                stock = 0
             data.append([
                 _jsonable_value(r.get('codigo')),
                 _jsonable_value(r.get('descripcion')),
                 _jsonable_value(r.get('fechaultimaventa')),
                 cantidad,
+                stock,
             ])
         return jsonify({'headers': headers_es, 'data': data})
     except ValueError as e:

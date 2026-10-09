@@ -92,6 +92,7 @@
 document.addEventListener('DOMContentLoaded', async function () {
     const URL_REPORTE = {{ url_for('reporte_ventas_periodo_post') | tojson }};
     const IDX_CANTIDAD = 3;
+    const IDX_STOCK = 4;
 
     function escapeHtml(s) {
         return String(s || '')
@@ -122,7 +123,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         const rows = payload.data || [];
 
         thead.innerHTML = '<tr>' + headers.map(function (h, idx) {
-            const align = idx === IDX_CANTIDAD ? ' class="text-end"' : '';
+            const align = (idx === IDX_CANTIDAD || idx === IDX_STOCK) ? ' class="text-end"' : '';
             return '<th' + align + '>' + escapeHtml(h) + '</th>';
         }).join('') + '</tr>';
 
@@ -136,8 +137,8 @@ document.addEventListener('DOMContentLoaded', async function () {
         rows.forEach(function (row, index) {
             html += '<tr' + (index === 0 ? ' class="fila-mas-vendido"' : '') + '>';
             (row || []).forEach(function (val, idx) {
-                const align = idx === IDX_CANTIDAD ? 'text-end' : '';
-                const texto = idx === IDX_CANTIDAD ? fmtCantidad(val) : (val === null || val === undefined ? '' : String(val));
+                const align = (idx === IDX_CANTIDAD || idx === IDX_STOCK) ? 'text-end' : '';
+                const texto = (idx === IDX_CANTIDAD || idx === IDX_STOCK) ? fmtCantidad(val) : (val === null || val === undefined ? '' : String(val));
                 html += '<td class="' + align + '">' + escapeHtml(texto) + '</td>';
             });
             html += '</tr>';
@@ -146,6 +147,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         html += '<tr class="fila-totales">';
         html += '<td colspan="3" class="text-end">Total</td>';
         html += '<td class="text-end">' + escapeHtml(fmtCantidad(sumarCantidad(rows))) + '</td>';
+        html += '<td></td>';
         html += '</tr>';
         tbody.innerHTML = html;
         document.getElementById('lblRowCount').textContent = String(rows.length);
