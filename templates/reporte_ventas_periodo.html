@@ -57,7 +57,7 @@
                 <label for="txtFechaHasta" class="form-label small fw-bold text-muted">Hasta</label>
                 <input type="date" id="txtFechaHasta" class="form-control form-control-sm" required value="{{ fecha_hasta }}">
             </div>
-            <div class="col-12 col-md-4 col-lg-4">
+            <div class="col-12 col-md-4 col-lg-3">
                 <label for="selCliente" class="form-label small fw-bold text-muted">Cliente</label>
                 <select id="selCliente" class="form-select form-select-sm">
                     <option value="0" selected>Todos</option>
@@ -65,6 +65,10 @@
                     <option value="{{ cli.idempresa }}">{{ cli.razonsocial }} (RUC: {{ cli.ruc }})</option>
                     {% endfor %}
                 </select>
+            </div>
+            <div class="col-12 col-md-4 col-lg-3">
+                <label for="txtItem" class="form-label small fw-bold text-muted">Item</label>
+                <input type="text" id="txtItem" class="form-control form-control-sm" placeholder="Código o nombre, ej. Reten" maxlength="50" autocomplete="off">
             </div>
             <div class="col-12 d-flex align-items-center flex-wrap gap-2 border-top pt-3 mt-3">
                 <button type="submit" class="btn btn-primary btn-sm px-4"><i class="bi bi-search"></i> Consultar</button>
@@ -91,8 +95,10 @@
 <script>
 document.addEventListener('DOMContentLoaded', async function () {
     const URL_REPORTE = {{ url_for('reporte_ventas_periodo_post') | tojson }};
-    const IDX_CANTIDAD = 3;
-    const IDX_STOCK = 4;
+    const IDX_ORDEN = 0;
+    const IDX_CANTIDAD = 4;
+    const IDX_IMPORTE = 5;
+    const IDX_STOCK = 6;
 
     function escapeHtml(s) {
         return String(s || '')
@@ -107,13 +113,23 @@ document.addEventListener('DOMContentLoaded', async function () {
         return Math.round(n).toLocaleString('es-PE');
     }
 
-    function sumarCantidad(rows) {
+    function fmtImporte(valor) {
+        const n = typeof valor === 'number' ? valor : parseFloat(valor);
+        if (!Number.isFinite(n)) return '';
+        return n.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    function sumarColumna(rows, idx) {
         let sum = 0;
         (rows || []).forEach(function (row) {
-            const n = parseFloat(row && row[IDX_CANTIDAD]);
+            const n = parseFloat(row && row[idx]);
             if (Number.isFinite(n)) sum += n;
         });
         return sum;
+    }
+
+    function esNumerico(idx) {
+        return idx === IDX_ORDEN || idx === IDX_CANTIDAD || idx === IDX_IMPORTE || idx === IDX_STOCK;
     }
 
     function renderizarTabla(payload) {
@@ -123,7 +139,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         const rows = payload.data || [];
 
         thead.innerHTML = '<tr>' + headers.map(function (h, idx) {
-            const align = (idx === IDX_CANTIDAD || idx === IDX_STOCK) ? ' class="text-end"' : '';
+            const align = esNumerico(idx) ? ' class="text-end"' : '';
             return '<th' + align + '>' + escapeHtml(h) + '</th>';
         }).join('') + '</tr>';
 
@@ -137,16 +153,19 @@ document.addEventListener('DOMContentLoaded', async function () {
         rows.forEach(function (row, index) {
             html += '<tr' + (index === 0 ? ' class="fila-mas-vendido"' : '') + '>';
             (row || []).forEach(function (val, idx) {
-                const align = (idx === IDX_CANTIDAD || idx === IDX_STOCK) ? 'text-end' : '';
-                const texto = (idx === IDX_CANTIDAD || idx === IDX_STOCK) ? fmtCantidad(val) : (val === null || val === undefined ? '' : String(val));
+                const align = esNumerico(idx) ? 'text-end' : '';
+                let texto = val === null || val === undefined ? '' : String(val);
+                if (idx === IDX_CANTIDAD || idx === IDX_STOCK || idx === IDX_ORDEN) texto = fmtCantidad(val);
+                if (idx === IDX_IMPORTE) texto = fmtImporte(val);
                 html += '<td class="' + align + '">' + escapeHtml(texto) + '</td>';
             });
             html += '</tr>';
         });
 
         html += '<tr class="fila-totales">';
-        html += '<td colspan="3" class="text-end">Total</td>';
-        html += '<td class="text-end">' + escapeHtml(fmtCantidad(sumarCantidad(rows))) + '</td>';
+        html += '<td colspan="4" class="text-end">Total</td>';
+        html += '<td class="text-end">' + escapeHtml(fmtCantidad(sumarColumna(rows, IDX_CANTIDAD))) + '</td>';
+        html += '<td class="text-end">' + escapeHtml(fmtImporte(sumarColumna(rows, IDX_IMPORTE))) + '</td>';
         html += '<td></td>';
         html += '</tr>';
         tbody.innerHTML = html;
@@ -157,6 +176,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         const fechaDesde = document.getElementById('txtFechaDesde').value;
         const fechaHasta = document.getElementById('txtFechaHasta').value;
         const cliente = document.getElementById('selCliente').value || '0';
+        const item = document.getElementById('txtItem').value.trim();
         if (!fechaDesde || !fechaHasta) {
             alert('Indique el rango de fechas.');
             return;
@@ -172,7 +192,8 @@ document.addEventListener('DOMContentLoaded', async function () {
                 body: JSON.stringify({
                     fecha_desde: fechaDesde,
                     fecha_hasta: fechaHasta,
-                    cliente: cliente
+                    cliente: cliente,
+                    item: item
                 })
             });
             const payload = await res.json();

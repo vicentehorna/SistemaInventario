@@ -2155,25 +2155,29 @@ def reporte_ventas_periodo_post():
     body = request.get_json(silent=True) or {}
     fecha_desde = str(body.get('fecha_desde') or '').strip()
     fecha_hasta = str(body.get('fecha_hasta') or '').strip()
+    item = str(body.get('item') or body.get('articulo') or '').strip()
     try:
         cliente = int(body.get('cliente') or 0)
     except (TypeError, ValueError):
         cliente = 0
 
     headers_es = [
+        'Orden',
         'Código del Item',
         'Descripción del Item',
         'Fecha Última Venta',
         'Cantidad',
+        'Importe total',
         'Stock Actual',
     ]
 
     try:
-        rows = get_reporte_ventas_por_periodo(fecha_desde, fecha_hasta, cliente)
+        rows = get_reporte_ventas_por_periodo(fecha_desde, fecha_hasta, cliente, item)
         data = []
-        for r in rows:
+        for indice, r in enumerate(rows, start=1):
             cantidad = r.get('cantidad')
             stock = r.get('stockactual')
+            importe = r.get('importetotal')
             try:
                 cantidad = int(cantidad or 0)
             except (TypeError, ValueError):
@@ -2182,11 +2186,20 @@ def reporte_ventas_periodo_post():
                 stock = int(stock or 0)
             except (TypeError, ValueError):
                 stock = 0
+            if isinstance(importe, Decimal):
+                importe = float(importe)
+            else:
+                try:
+                    importe = float(importe or 0)
+                except (TypeError, ValueError):
+                    importe = 0.0
             data.append([
+                indice,
                 _jsonable_value(r.get('codigo')),
                 _jsonable_value(r.get('descripcion')),
                 _jsonable_value(r.get('fechaultimaventa')),
                 cantidad,
+                round(importe, 2),
                 stock,
             ])
         return jsonify({'headers': headers_es, 'data': data})

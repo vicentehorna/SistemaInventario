@@ -4221,10 +4221,20 @@ def _fecha_filtro_reporte(valor, nombre):
         raise ValueError(f'{nombre} no válida.')
 
 
-def get_reporte_ventas_por_periodo(fecha_desde, fecha_hasta, cliente=0):
+def _patron_busqueda_item(texto):
+    """Patrón LIKE para código o descripción. Vacío significa sin filtro."""
+    s = (texto or '').strip()
+    if not s:
+        return ''
+    s = s.replace('[', '[[]').replace('%', '[%]').replace('_', '[_]')
+    return f'%{s}%'
+
+
+def get_reporte_ventas_por_periodo(fecha_desde, fecha_hasta, cliente=0, item=''):
     """
     Ítems vendidos en un rango de fechas, agrupados y ordenados por cantidad descendente.
     Excluye ventas anuladas. cliente=0 incluye todos los clientes.
+    item filtra por código o descripción, coincidencia parcial.
     """
     try:
         cliente_i = int(cliente or 0)
@@ -4236,6 +4246,7 @@ def get_reporte_ventas_por_periodo(fecha_desde, fecha_hasta, cliente=0):
     if desde > hasta:
         raise ValueError('La fecha desde no puede ser mayor que la fecha hasta.')
 
+    patron_item = _patron_busqueda_item(item)
     desde_dt = datetime(desde.year, desde.month, desde.day)
     hasta_exc = datetime(hasta.year, hasta.month, hasta.day) + timedelta(days=1)
 
@@ -4250,6 +4261,7 @@ def get_reporte_ventas_por_periodo(fecha_desde, fecha_hasta, cliente=0):
                 i.Descripcion AS Descripcion,
                 MAX(v.FechaVenta) AS FechaUltimaVenta,
                 SUM(d.Cantidad) AS Cantidad,
+                SUM(d.TotalLinea) AS ImporteTotal,
                 i.StockActual AS StockActual
             FROM dbo.Inventario_VentasDet d
             INNER JOIN dbo.Inventario_VentasCab v ON v.IdVenta = d.IdVenta
@@ -4258,10 +4270,23 @@ def get_reporte_ventas_por_periodo(fecha_desde, fecha_hasta, cliente=0):
               AND v.FechaVenta >= ?
               AND v.FechaVenta < ?
               AND (? = 0 OR v.IdCliente = ?)
+              AND (
+                    ? = N''
+                    OR i.Codigo LIKE ?
+                    OR i.Descripcion LIKE ?
+                  )
             GROUP BY i.IdItem, i.Codigo, i.Descripcion, i.StockActual
             ORDER BY SUM(d.Cantidad) DESC, i.Descripcion
             """,
-            (desde_dt, hasta_exc, cliente_i, cliente_i),
+            (
+                desde_dt,
+                hasta_exc,
+                cliente_i,
+                cliente_i,
+                patron_item,
+                patron_item,
+                patron_item,
+            ),
         )
         columns = [col[0] for col in cursor.description]
         rows = []
