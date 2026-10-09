@@ -29,6 +29,39 @@
         box-shadow: 0 1px 0 #dee2e6;
     }
 
+    .table-reporte-ventas thead th.th-ordenable {
+        cursor: pointer;
+        user-select: none;
+    }
+
+    .table-reporte-ventas thead th.th-ordenable:hover {
+        background-color: #e9ecef;
+    }
+
+    .table-reporte-ventas .btn-ordenar {
+        border: 0;
+        background: transparent;
+        padding: 0;
+        margin: 0;
+        font: inherit;
+        font-weight: 700;
+        color: inherit;
+        width: 100%;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+    }
+
+    .table-reporte-ventas th.text-end .btn-ordenar {
+        justify-content: flex-end;
+    }
+
+    .table-reporte-ventas .marca-orden {
+        font-size: 0.65rem;
+        line-height: 1;
+    }
+
     .table-reporte-ventas tr.fila-totales td {
         background-color: #f8f9fa;
         font-weight: 700;
@@ -45,7 +78,7 @@
 <div class="card shadow-sm border-0 mb-4">
     <div class="card-header bg-white border-bottom-0 pt-4 pb-0">
         <h5 class="mb-0 fw-bold text-secondary"><i class="bi bi-bar-chart-line"></i> Ventas por Periodo</h5>
-        <p class="text-muted small mb-0 mt-2">Ítems vendidos en el periodo, ordenados de mayor a menor cantidad.</p>
+        <p class="text-muted small mb-0 mt-2">Ítems vendidos en el periodo. Haga clic en el título de una columna para ordenar.</p>
     </div>
     <div class="card-body">
         <form id="frmReporteVentasPeriodo" class="row g-2 g-lg-2 align-items-end">
@@ -96,9 +129,14 @@
 document.addEventListener('DOMContentLoaded', async function () {
     const URL_REPORTE = {{ url_for('reporte_ventas_periodo_post') | tojson }};
     const IDX_ORDEN = 0;
+    const IDX_FECHA = 3;
     const IDX_CANTIDAD = 4;
     const IDX_IMPORTE = 5;
     const IDX_STOCK = 6;
+    let cabeceras = [];
+    let filasBase = [];
+    let sortCol = IDX_CANTIDAD;
+    let sortDesc = true;
 
     function escapeHtml(s) {
         return String(s || '')
@@ -132,19 +170,71 @@ document.addEventListener('DOMContentLoaded', async function () {
         return idx === IDX_ORDEN || idx === IDX_CANTIDAD || idx === IDX_IMPORTE || idx === IDX_STOCK;
     }
 
-    function renderizarTabla(payload) {
+    function fechaANumero(valor) {
+        const partes = String(valor || '').split('/');
+        if (partes.length !== 3) return 0;
+        const dia = partes[0].padStart(2, '0');
+        const mes = partes[1].padStart(2, '0');
+        return Number(partes[2] + mes + dia) || 0;
+    }
+
+    function compararValor(a, b, idx) {
+        if (idx === IDX_FECHA) return fechaANumero(a) - fechaANumero(b);
+        if (idx === IDX_CANTIDAD || idx === IDX_IMPORTE || idx === IDX_STOCK || idx === IDX_ORDEN) {
+            const na = Number(a);
+            const nb = Number(b);
+            return (Number.isFinite(na) ? na : 0) - (Number.isFinite(nb) ? nb : 0);
+        }
+        return String(a || '').localeCompare(String(b || ''), 'es', { sensitivity: 'base', numeric: true });
+    }
+
+    function filasOrdenadas() {
+        const indexed = filasBase.map(function (row, i) {
+            return { row: row, i: i };
+        });
+        indexed.sort(function (a, b) {
+            const cmp = compararValor(a.row[sortCol], b.row[sortCol], sortCol);
+            if (cmp !== 0) return sortDesc ? -cmp : cmp;
+            return a.i - b.i;
+        });
+        return indexed.map(function (item, index) {
+            const row = item.row.slice();
+            row[IDX_ORDEN] = index + 1;
+            return row;
+        });
+    }
+
+    function pintarTabla() {
         const thead = document.getElementById('thead-reporte');
         const tbody = document.getElementById('tbody-reporte');
-        const headers = payload.headers || [];
-        const rows = payload.data || [];
+        const rows = filasOrdenadas();
 
-        thead.innerHTML = '<tr>' + headers.map(function (h, idx) {
-            const align = esNumerico(idx) ? ' class="text-end"' : '';
-            return '<th' + align + '>' + escapeHtml(h) + '</th>';
+        thead.innerHTML = '<tr>' + cabeceras.map(function (h, idx) {
+            const align = esNumerico(idx) ? ' text-end' : '';
+            const marca = idx === sortCol
+                ? '<span class="marca-orden" aria-hidden="true">' + (sortDesc ? '&#9660;' : '&#9650;') + '</span>'
+                : '';
+            return '<th class="th-ordenable' + align + '">'
+                + '<button type="button" class="btn-ordenar" data-col="' + idx + '">'
+                + escapeHtml(h) + marca
+                + '</button></th>';
         }).join('') + '</tr>';
 
+        thead.querySelectorAll('.btn-ordenar').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                const idx = Number(btn.getAttribute('data-col'));
+                if (idx === sortCol) {
+                    sortDesc = !sortDesc;
+                } else {
+                    sortCol = idx;
+                    sortDesc = idx === IDX_CANTIDAD || idx === IDX_IMPORTE || idx === IDX_STOCK;
+                }
+                pintarTabla();
+            });
+        });
+
         if (!rows.length) {
-            tbody.innerHTML = '<tr><td colspan="' + headers.length + '" class="text-center text-muted py-3">No hay ventas en el periodo seleccionado.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="' + cabeceras.length + '" class="text-center text-muted py-3">No hay ventas en el periodo seleccionado.</td></tr>';
             document.getElementById('lblRowCount').textContent = '0';
             return;
         }
@@ -164,12 +254,20 @@ document.addEventListener('DOMContentLoaded', async function () {
 
         html += '<tr class="fila-totales">';
         html += '<td colspan="4" class="text-end">Total</td>';
-        html += '<td class="text-end">' + escapeHtml(fmtCantidad(sumarColumna(rows, IDX_CANTIDAD))) + '</td>';
-        html += '<td class="text-end">' + escapeHtml(fmtImporte(sumarColumna(rows, IDX_IMPORTE))) + '</td>';
+        html += '<td class="text-end">' + escapeHtml(fmtCantidad(sumarColumna(filasBase, IDX_CANTIDAD))) + '</td>';
+        html += '<td class="text-end">' + escapeHtml(fmtImporte(sumarColumna(filasBase, IDX_IMPORTE))) + '</td>';
         html += '<td></td>';
         html += '</tr>';
         tbody.innerHTML = html;
         document.getElementById('lblRowCount').textContent = String(rows.length);
+    }
+
+    function renderizarTabla(payload) {
+        cabeceras = payload.headers || [];
+        filasBase = (payload.data || []).map(function (row) { return (row || []).slice(); });
+        sortCol = IDX_CANTIDAD;
+        sortDesc = true;
+        pintarTabla();
     }
 
     async function ejecutarConsulta() {
