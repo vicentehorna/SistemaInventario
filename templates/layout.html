@@ -472,6 +472,13 @@
                         </a>
                     </li>
 
+                    <li class="{{ 'active' if request.endpoint == 'reporte_compras_periodo_page' else '' }}">
+                        <a href="{{ url_for('reporte_compras_periodo_page') }}" class="sidebar-link" title="Compras por Periodo">
+                            <i class="bi bi-cart-check sidebar-icon" aria-hidden="true"></i>
+                            <span class="sidebar-link-text">Compras por Periodo</span>
+                        </a>
+                    </li>
+
                     <hr class="mx-3 opacity-25 mt-3 mb-2">
 
                     <li>

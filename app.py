@@ -94,6 +94,7 @@ from database import (
     insertar_venta,
     get_lista_ventas_inventario,
     get_reporte_ventas_por_periodo,
+    get_reporte_compras_por_periodo,
     anular_venta,
     get_venta_por_id,
     actualizar_venta,
@@ -2207,6 +2208,83 @@ def reporte_ventas_periodo_post():
         return jsonify({'error': str(e)}), 400
     except Exception as e:
         logging.exception('reporte_ventas_periodo_post')
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/reportes/compras-por-periodo', methods=['GET'])
+@login_required
+def reporte_compras_periodo_page():
+    """Reporte de ítems comprados en un rango de fechas, ordenados por cantidad."""
+    ensure_user_session()
+    hoy = _fecha_hoy_app()
+    return render_template(
+        'reporte_compras_periodo.html',
+        proveedores=get_proveedores_activos(),
+        fecha_desde=date(hoy.year, 1, 1).isoformat(),
+        fecha_hasta=hoy.isoformat(),
+    )
+
+
+@app.route('/reportes/compras-por-periodo/listado', methods=['POST'])
+@login_required
+def reporte_compras_periodo_post():
+    """JSON del reporte Compras por Periodo."""
+    ensure_user_session()
+    body = request.get_json(silent=True) or {}
+    fecha_desde = str(body.get('fecha_desde') or '').strip()
+    fecha_hasta = str(body.get('fecha_hasta') or '').strip()
+    item = str(body.get('item') or body.get('articulo') or '').strip()
+    try:
+        proveedor = int(body.get('proveedor') or 0)
+    except (TypeError, ValueError):
+        proveedor = 0
+
+    headers_es = [
+        'Orden',
+        'Código del Item',
+        'Descripción del Item',
+        'Fecha Última Compra',
+        'Cantidad',
+        'Importe total',
+        'Stock Actual',
+    ]
+
+    try:
+        rows = get_reporte_compras_por_periodo(fecha_desde, fecha_hasta, proveedor, item)
+        data = []
+        for indice, r in enumerate(rows, start=1):
+            cantidad = r.get('cantidad')
+            stock = r.get('stockactual')
+            importe = r.get('importetotal')
+            try:
+                cantidad = int(cantidad or 0)
+            except (TypeError, ValueError):
+                cantidad = 0
+            try:
+                stock = int(stock or 0)
+            except (TypeError, ValueError):
+                stock = 0
+            if isinstance(importe, Decimal):
+                importe = float(importe)
+            else:
+                try:
+                    importe = float(importe or 0)
+                except (TypeError, ValueError):
+                    importe = 0.0
+            data.append([
+                indice,
+                _jsonable_value(r.get('codigo')),
+                _jsonable_value(r.get('descripcion')),
+                _jsonable_value(r.get('fechaultimacompra')),
+                cantidad,
+                round(importe, 2),
+                stock,
+            ])
+        return jsonify({'headers': headers_es, 'data': data})
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        logging.exception('reporte_compras_periodo_post')
         return jsonify({'error': str(e)}), 500
 
 

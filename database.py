@@ -4306,6 +4306,82 @@ def get_reporte_ventas_por_periodo(fecha_desde, fecha_hasta, cliente=0, item='')
                 pass
 
 
+def get_reporte_compras_por_periodo(fecha_desde, fecha_hasta, proveedor=0, item=''):
+    """
+    Ítems comprados en un rango de fechas, agrupados y ordenados por cantidad descendente.
+    Excluye compras anuladas. proveedor=0 incluye todos los proveedores.
+    item filtra por código o descripción, coincidencia parcial.
+    """
+    try:
+        proveedor_i = int(proveedor or 0)
+    except (TypeError, ValueError):
+        proveedor_i = 0
+
+    desde = _fecha_filtro_reporte(fecha_desde, 'Fecha desde')
+    hasta = _fecha_filtro_reporte(fecha_hasta, 'Fecha hasta')
+    if desde > hasta:
+        raise ValueError('La fecha desde no puede ser mayor que la fecha hasta.')
+
+    patron_item = _patron_busqueda_item(item)
+    desde_dt = datetime(desde.year, desde.month, desde.day)
+    hasta_exc = datetime(hasta.year, hasta.month, hasta.day) + timedelta(days=1)
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT
+                i.Codigo AS Codigo,
+                i.Descripcion AS Descripcion,
+                MAX(c.FechaCompra) AS FechaUltimaCompra,
+                SUM(d.Cantidad) AS Cantidad,
+                SUM(d.TotalLinea) AS ImporteTotal,
+                i.StockActual AS StockActual
+            FROM dbo.Inventario_ComprasDet d
+            INNER JOIN dbo.Inventario_ComprasCab c ON c.IdCompra = d.IdCompra
+            INNER JOIN dbo.Inventario_Items i ON i.IdItem = d.IdItem
+            WHERE UPPER(LTRIM(RTRIM(ISNULL(c.EstadoCompra, '')))) NOT IN ('ANULADA', 'ANULADO')
+              AND c.FechaCompra >= ?
+              AND c.FechaCompra < ?
+              AND (? = 0 OR c.IdProveedor = ?)
+              AND (
+                    ? = N''
+                    OR i.Codigo LIKE ?
+                    OR i.Descripcion LIKE ?
+                  )
+            GROUP BY i.IdItem, i.Codigo, i.Descripcion, i.StockActual
+            ORDER BY SUM(d.Cantidad) DESC, i.Descripcion
+            """,
+            (
+                desde_dt,
+                hasta_exc,
+                proveedor_i,
+                proveedor_i,
+                patron_item,
+                patron_item,
+                patron_item,
+            ),
+        )
+        columns = [col[0] for col in cursor.description]
+        rows = []
+        for row in cursor.fetchall():
+            item_row = {col: val for col, val in zip(columns, row)}
+            rows.append({k.lower(): v for k, v in item_row.items()})
+        cursor.close()
+        return rows
+    except Exception as e:
+        _logger_db.exception("get_reporte_compras_por_periodo: %s", e)
+        raise
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
 def anular_venta(id_venta):
     """Anula una venta activa y devuelve el stock del detalle al almacén."""
     conn = None

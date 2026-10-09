@@ -1,0 +1,322 @@
+{% extends "layout.html" %}
+
+{% block title %}Compras por Periodo{% endblock %}
+
+{% block extra_css %}
+<style>
+    .table-scroll-container {
+        max-height: 65vh;
+        overflow: auto;
+        border: 1px solid #dee2e6;
+    }
+
+    .table-reporte-compras {
+        font-size: 12px;
+        margin-bottom: 0;
+    }
+
+    .table-reporte-compras th,
+    .table-reporte-compras td {
+        padding: 0.35rem 0.55rem;
+        vertical-align: middle;
+    }
+
+    .table-reporte-compras thead th {
+        position: sticky;
+        top: 0;
+        background-color: #f8f9fa;
+        z-index: 2;
+        box-shadow: 0 1px 0 #dee2e6;
+    }
+
+    .table-reporte-compras thead th.th-ordenable {
+        cursor: pointer;
+        user-select: none;
+    }
+
+    .table-reporte-compras thead th.th-ordenable:hover {
+        background-color: #e9ecef;
+    }
+
+    .table-reporte-compras .btn-ordenar {
+        border: 0;
+        background: transparent;
+        padding: 0;
+        margin: 0;
+        font: inherit;
+        font-weight: 700;
+        color: inherit;
+        width: 100%;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+    }
+
+    .table-reporte-compras th.text-end .btn-ordenar {
+        justify-content: flex-end;
+    }
+
+    .table-reporte-compras .marca-orden {
+        font-size: 0.65rem;
+        line-height: 1;
+    }
+
+    .table-reporte-compras tr.fila-totales td {
+        background-color: #f8f9fa;
+        font-weight: 700;
+        border-top: 2px solid #dee2e6;
+    }
+
+    .table-reporte-compras tr.fila-primera td {
+        background-color: #ecfdf5;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card shadow-sm border-0 mb-4">
+    <div class="card-header bg-white border-bottom-0 pt-4 pb-0">
+        <h5 class="mb-0 fw-bold text-secondary"><i class="bi bi-cart-check"></i> Compras por Periodo</h5>
+        <p class="text-muted small mb-0 mt-2">Ítems comprados en el periodo. Haga clic en el título de una columna para ordenar.</p>
+    </div>
+    <div class="card-body">
+        <form id="frmReporteComprasPeriodo" class="row g-2 g-lg-2 align-items-end">
+            <div class="col-12 col-md-4 col-lg-3">
+                <label for="txtFechaDesde" class="form-label small fw-bold text-muted">Desde</label>
+                <input type="date" id="txtFechaDesde" class="form-control form-control-sm" required value="{{ fecha_desde }}">
+            </div>
+            <div class="col-12 col-md-4 col-lg-3">
+                <label for="txtFechaHasta" class="form-label small fw-bold text-muted">Hasta</label>
+                <input type="date" id="txtFechaHasta" class="form-control form-control-sm" required value="{{ fecha_hasta }}">
+            </div>
+            <div class="col-12 col-md-4 col-lg-3">
+                <label for="selProveedor" class="form-label small fw-bold text-muted">Proveedor</label>
+                <select id="selProveedor" class="form-select form-select-sm">
+                    <option value="0" selected>Todos</option>
+                    {% for prov in proveedores %}
+                    <option value="{{ prov.idempresa }}">{{ prov.razonsocial }} (RUC: {{ prov.ruc }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-12 col-md-4 col-lg-3">
+                <label for="txtItem" class="form-label small fw-bold text-muted">Item</label>
+                <input type="text" id="txtItem" class="form-control form-control-sm" placeholder="Código o nombre, ej. Reten" maxlength="50" autocomplete="off">
+            </div>
+            <div class="col-12 d-flex align-items-center flex-wrap gap-2 border-top pt-3 mt-3">
+                <button type="submit" class="btn btn-primary btn-sm px-4"><i class="bi bi-search"></i> Consultar</button>
+                <span class="ms-auto text-muted small fw-bold">No. de Registros: <span id="lblRowCount">0</span></span>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card shadow-sm border-0 d-none" id="cardResultado">
+    <div class="card-body">
+        <h4 class="text-center fw-bold mb-3">COMPRAS POR PERIODO</h4>
+        <div class="table-scroll-container">
+            <table class="table table-bordered table-sm table-hover table-reporte-compras align-middle">
+                <thead id="thead-reporte"></thead>
+                <tbody id="tbody-reporte"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', async function () {
+    const URL_REPORTE = {{ url_for('reporte_compras_periodo_post') | tojson }};
+    const IDX_ORDEN = 0;
+    const IDX_FECHA = 3;
+    const IDX_CANTIDAD = 4;
+    const IDX_IMPORTE = 5;
+    const IDX_STOCK = 6;
+    let cabeceras = [];
+    let filasBase = [];
+    let sortCol = IDX_CANTIDAD;
+    let sortDesc = true;
+
+    function escapeHtml(s) {
+        return String(s || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    function fmtCantidad(valor) {
+        const n = typeof valor === 'number' ? valor : parseFloat(valor);
+        if (!Number.isFinite(n)) return '';
+        return Math.round(n).toLocaleString('es-PE');
+    }
+
+    function fmtImporte(valor) {
+        const n = typeof valor === 'number' ? valor : parseFloat(valor);
+        if (!Number.isFinite(n)) return '';
+        return n.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    function sumarColumna(rows, idx) {
+        let sum = 0;
+        (rows || []).forEach(function (row) {
+            const n = parseFloat(row && row[idx]);
+            if (Number.isFinite(n)) sum += n;
+        });
+        return sum;
+    }
+
+    function esNumerico(idx) {
+        return idx === IDX_ORDEN || idx === IDX_CANTIDAD || idx === IDX_IMPORTE || idx === IDX_STOCK;
+    }
+
+    function fechaANumero(valor) {
+        const partes = String(valor || '').split('/');
+        if (partes.length !== 3) return 0;
+        const dia = partes[0].padStart(2, '0');
+        const mes = partes[1].padStart(2, '0');
+        return Number(partes[2] + mes + dia) || 0;
+    }
+
+    function compararValor(a, b, idx) {
+        if (idx === IDX_FECHA) return fechaANumero(a) - fechaANumero(b);
+        if (idx === IDX_CANTIDAD || idx === IDX_IMPORTE || idx === IDX_STOCK || idx === IDX_ORDEN) {
+            const na = Number(a);
+            const nb = Number(b);
+            return (Number.isFinite(na) ? na : 0) - (Number.isFinite(nb) ? nb : 0);
+        }
+        return String(a || '').localeCompare(String(b || ''), 'es', { sensitivity: 'base', numeric: true });
+    }
+
+    function filasOrdenadas() {
+        const indexed = filasBase.map(function (row, i) {
+            return { row: row, i: i };
+        });
+        indexed.sort(function (a, b) {
+            const cmp = compararValor(a.row[sortCol], b.row[sortCol], sortCol);
+            if (cmp !== 0) return sortDesc ? -cmp : cmp;
+            return a.i - b.i;
+        });
+        return indexed.map(function (item, index) {
+            const row = item.row.slice();
+            row[IDX_ORDEN] = index + 1;
+            return row;
+        });
+    }
+
+    function pintarTabla() {
+        const thead = document.getElementById('thead-reporte');
+        const tbody = document.getElementById('tbody-reporte');
+        const rows = filasOrdenadas();
+
+        thead.innerHTML = '<tr>' + cabeceras.map(function (h, idx) {
+            const align = esNumerico(idx) ? ' text-end' : '';
+            const marca = idx === sortCol
+                ? '<span class="marca-orden" aria-hidden="true">' + (sortDesc ? '&#9660;' : '&#9650;') + '</span>'
+                : '';
+            return '<th class="th-ordenable' + align + '">'
+                + '<button type="button" class="btn-ordenar" data-col="' + idx + '">'
+                + escapeHtml(h) + marca
+                + '</button></th>';
+        }).join('') + '</tr>';
+
+        thead.querySelectorAll('.btn-ordenar').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                const idx = Number(btn.getAttribute('data-col'));
+                if (idx === sortCol) {
+                    sortDesc = !sortDesc;
+                } else {
+                    sortCol = idx;
+                    sortDesc = idx === IDX_CANTIDAD || idx === IDX_IMPORTE || idx === IDX_STOCK;
+                }
+                pintarTabla();
+            });
+        });
+
+        if (!rows.length) {
+            tbody.innerHTML = '<tr><td colspan="' + cabeceras.length + '" class="text-center text-muted py-3">No hay compras en el periodo seleccionado.</td></tr>';
+            document.getElementById('lblRowCount').textContent = '0';
+            return;
+        }
+
+        let html = '';
+        rows.forEach(function (row, index) {
+            html += '<tr' + (index === 0 ? ' class="fila-primera"' : '') + '>';
+            (row || []).forEach(function (val, idx) {
+                const align = esNumerico(idx) ? 'text-end' : '';
+                let texto = val === null || val === undefined ? '' : String(val);
+                if (idx === IDX_CANTIDAD || idx === IDX_STOCK || idx === IDX_ORDEN) texto = fmtCantidad(val);
+                if (idx === IDX_IMPORTE) texto = fmtImporte(val);
+                html += '<td class="' + align + '">' + escapeHtml(texto) + '</td>';
+            });
+            html += '</tr>';
+        });
+
+        html += '<tr class="fila-totales">';
+        html += '<td colspan="4" class="text-end">Total</td>';
+        html += '<td class="text-end">' + escapeHtml(fmtCantidad(sumarColumna(filasBase, IDX_CANTIDAD))) + '</td>';
+        html += '<td class="text-end">' + escapeHtml(fmtImporte(sumarColumna(filasBase, IDX_IMPORTE))) + '</td>';
+        html += '<td></td>';
+        html += '</tr>';
+        tbody.innerHTML = html;
+        document.getElementById('lblRowCount').textContent = String(rows.length);
+    }
+
+    function renderizarTabla(payload) {
+        cabeceras = payload.headers || [];
+        filasBase = (payload.data || []).map(function (row) { return (row || []).slice(); });
+        sortCol = IDX_CANTIDAD;
+        sortDesc = true;
+        pintarTabla();
+    }
+
+    async function ejecutarConsulta() {
+        const fechaDesde = document.getElementById('txtFechaDesde').value;
+        const fechaHasta = document.getElementById('txtFechaHasta').value;
+        const proveedor = document.getElementById('selProveedor').value || '0';
+        const item = document.getElementById('txtItem').value.trim();
+        if (!fechaDesde || !fechaHasta) {
+            alert('Indique el rango de fechas.');
+            return;
+        }
+        if (fechaDesde > fechaHasta) {
+            alert('La fecha desde no puede ser mayor que la fecha hasta.');
+            return;
+        }
+        try {
+            const res = await fetch(URL_REPORTE, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    fecha_desde: fechaDesde,
+                    fecha_hasta: fechaHasta,
+                    proveedor: proveedor,
+                    item: item
+                })
+            });
+            const payload = await res.json();
+            if (!res.ok || payload.error) {
+                document.getElementById('cardResultado').classList.add('d-none');
+                document.getElementById('lblRowCount').textContent = '0';
+                alert(payload.error || 'Error al consultar el reporte.');
+                return;
+            }
+            document.getElementById('cardResultado').classList.remove('d-none');
+            renderizarTabla(payload);
+        } catch (e) {
+            console.error(e);
+            document.getElementById('cardResultado').classList.add('d-none');
+            document.getElementById('lblRowCount').textContent = '0';
+            alert('Error de red o del servidor.');
+        }
+    }
+
+    document.getElementById('frmReporteComprasPeriodo').addEventListener('submit', async function (e) {
+        e.preventDefault();
+        await ejecutarConsulta();
+    });
+
+    await ejecutarConsulta();
+});
+</script>
+{% endblock %}
