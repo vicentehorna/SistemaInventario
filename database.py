@@ -2559,8 +2559,31 @@ def get_historial_movimientos_item(iditem):
                 pass
 
 
-def get_listado_articulos_inventario(codigo='', nombre=''):
-    """Ejecuta sp_listadoarticulos_inventario."""
+def _ids_con_codigo_bomba(cursor, ids, patron):
+    """IdItem cuyo Código de Bomba Asociada contiene el patrón LIKE."""
+    encontrados = set()
+    for inicio in range(0, len(ids), 400):
+        lote = ids[inicio:inicio + 400]
+        placeholders = ','.join('?' * len(lote))
+        cursor.execute(
+            f"""
+            SELECT IdItem
+            FROM dbo.Inventario_Items
+            WHERE IdItem IN ({placeholders})
+              AND UPPER(LTRIM(RTRIM(ISNULL(CodigoBomba, '')))) LIKE UPPER(?)
+            """,
+            (*lote, patron),
+        )
+        for row in cursor.fetchall():
+            try:
+                encontrados.add(int(row[0]))
+            except (TypeError, ValueError):
+                continue
+    return encontrados
+
+
+def get_listado_articulos_inventario(codigo='', nombre='', codigo_bomba=''):
+    """Ejecuta sp_listadoarticulos_inventario y, si aplica, filtra por código de bomba."""
     conn = None
     try:
         conn = get_db_connection()
@@ -2574,6 +2597,21 @@ def get_listado_articulos_inventario(codigo='', nombre=''):
         for row in cursor.fetchall():
             item = {col: val for col, val in zip(columns, row)}
             rows.append({k.lower(): v for k, v in item.items()})
+
+        bomba = (codigo_bomba or '').strip()
+        if bomba and rows:
+            patron = _patron_busqueda_item(bomba)
+            ids = []
+            for r in rows:
+                try:
+                    ids.append(int(r.get('iditem')))
+                except (TypeError, ValueError):
+                    continue
+            coinciden = _ids_con_codigo_bomba(cursor, ids, patron) if ids else set()
+            rows = [
+                r for r in rows
+                if str(r.get('iditem') or '').isdigit() and int(r.get('iditem')) in coinciden
+            ]
         cursor.close()
         return rows
     except Exception as e:

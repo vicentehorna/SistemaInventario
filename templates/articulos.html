@@ -26,6 +26,32 @@
 
     .articulos-view .section-header {
         margin-bottom: 1.75rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        flex-wrap: wrap;
+        gap: 1rem;
+    }
+
+    .articulos-view .btn-volver-listado {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.4rem 0.85rem;
+        font-size: 0.875rem;
+        color: #475569;
+        background-color: var(--surface);
+        border: 1px solid #cbd5e1;
+        border-radius: 6px;
+        text-decoration: none;
+        white-space: nowrap;
+        transition: all 0.2s;
+    }
+
+    .articulos-view .btn-volver-listado:hover {
+        background-color: #f1f5f9;
+        border-color: #94a3b8;
+        color: var(--text-dark);
     }
 
     .articulos-view .section-header h1 {
@@ -236,9 +262,17 @@
 
 {% block content %}
 <div class="articulos-view view-container">
+    {% set filtros_lista = filtros_lista or {} %}
     <div class="section-header">
-        <h1>{% if modo_edicion %}Editar Artículo{% else %}Registrar Artículo{% endif %}</h1>
-        <p>{% if modo_edicion %}Modifique los datos del artículo. El código no puede cambiarse.{% else %}Los campos resaltados en tono cálido son requeridos para el control de inventario.{% endif %}</p>
+        <div>
+            <h1>{% if modo_edicion %}Editar Artículo{% else %}Registrar Artículo{% endif %}</h1>
+            <p>{% if modo_edicion %}Modifique los datos del artículo. El código no puede cambiarse.{% else %}Los campos resaltados en tono cálido son requeridos para el control de inventario.{% endif %}</p>
+        </div>
+        {% if modo_edicion %}
+        <a href="{{ url_for('lista_articulos_page', **filtros_lista) }}" class="btn-volver-listado">
+            <i class="bi bi-arrow-left" aria-hidden="true"></i> Volver al listado
+        </a>
+        {% endif %}
     </div>
 
     <div class="form-card-modern">
@@ -246,6 +280,9 @@
             {% if modo_edicion and form.get('iditem') %}
             <input type="hidden" name="iditem" value="{{ form.get('iditem') }}">
             {% endif %}
+            {% for clave, valor in filtros_lista.items() %}
+            <input type="hidden" name="lista_{{ clave }}" value="{{ valor }}">
+            {% endfor %}
             <div class="form-grid">
                 <div class="form-field">
                     <label for="codigo"><span class="label-dot" aria-hidden="true"></span> Código / Nro Parte</label>
@@ -321,7 +358,7 @@
             </div>
 
             <div class="form-actions">
-                <a href="{{ url_for('lista_articulos_page') }}" class="btn-modern btn-secondary text-decoration-none">Cancelar</a>
+                <a href="{{ url_for('lista_articulos_page', **filtros_lista) }}" class="btn-modern btn-secondary text-decoration-none">Cancelar</a>
                 <button type="submit" class="btn-modern btn-primary"
                         {% if not categorias or not marcas %}disabled title="Complete catálogos de categorías y marcas"{% endif %}>
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>

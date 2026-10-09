@@ -1153,13 +1153,24 @@ def logout():
     return redirect(url_for('login'))
 
 
-def _articulos_form_context(form=None, modo_edicion=False):
+def _filtros_lista_articulos(source, prefijo=''):
+    """Filtros del listado de artículos (para volver al listado con los mismos filtros)."""
+    filtros = {}
+    for clave in ('codigo', 'nombre', 'codigo_bomba'):
+        valor = str(source.get(prefijo + clave) or '').strip()
+        if valor:
+            filtros[clave] = valor
+    return filtros
+
+
+def _articulos_form_context(form=None, modo_edicion=False, filtros_lista=None):
     """Contexto común para GET/POST del formulario de artículos."""
     return {
         'categorias': get_inventario_categorias(),
         'marcas': get_inventario_marcas(),
         'form': form or {},
         'modo_edicion': modo_edicion,
+        'filtros_lista': filtros_lista or {},
     }
 
 
@@ -1202,13 +1213,18 @@ def articulos_page():
 def articulos_editar_page(iditem):
     """Formulario de edición de un artículo existente."""
     ensure_user_session()
+    filtros_lista = _filtros_lista_articulos(request.args)
     item = get_inventario_item_por_id(iditem)
     if not item:
         flash('Artículo no encontrado.', 'error')
-        return redirect(url_for('lista_articulos_page'))
+        return redirect(url_for('lista_articulos_page', **filtros_lista))
     return render_template(
         'articulos.html',
-        **_articulos_form_context(_item_a_form(item), modo_edicion=True),
+        **_articulos_form_context(
+            _item_a_form(item),
+            modo_edicion=True,
+            filtros_lista=filtros_lista,
+        ),
     )
 
 
@@ -1246,13 +1262,15 @@ def articulos_guardar():
         )
         modo_edicion = False
 
+    filtros_lista = _filtros_lista_articulos(request.form, 'lista_') if iditem else {}
+
     if ok:
         flash(msg, 'success')
-        return redirect(url_for('lista_articulos_page'))
+        return redirect(url_for('lista_articulos_page', **filtros_lista))
     flash(msg, 'error')
     return render_template(
         'articulos.html',
-        **_articulos_form_context(form, modo_edicion=modo_edicion),
+        **_articulos_form_context(form, modo_edicion=modo_edicion, filtros_lista=filtros_lista),
     )
 
 
@@ -1320,7 +1338,10 @@ def articulos_historial(id_item):
 def lista_articulos_page():
     """Listado y búsqueda de artículos registrados."""
     ensure_user_session()
-    return render_template('lista_articulos.html')
+    return render_template(
+        'lista_articulos.html',
+        filtros=_filtros_lista_articulos(request.args),
+    )
 
 
 @app.route('/configuracion/articulos/listado', methods=['POST'])
@@ -1331,6 +1352,7 @@ def lista_articulos_post():
     body = request.get_json(silent=True) or {}
     codigo = str(body.get('codigo') or '').strip()
     nombre = str(body.get('nombre') or '').strip()
+    codigo_bomba = str(body.get('codigo_bomba') or '').strip()
 
     headers_es = [
         'Código',
@@ -1343,7 +1365,7 @@ def lista_articulos_post():
     keys_datos = ['codigo', 'descripcion', 'categoria', 'aplicacion', 'marca', 'stockactual']
 
     try:
-        rows = get_listado_articulos_inventario(codigo, nombre)
+        rows = get_listado_articulos_inventario(codigo, nombre, codigo_bomba)
         resultado = []
         ids = []
         for r in rows:

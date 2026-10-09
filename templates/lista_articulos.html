@@ -168,11 +168,15 @@
         <form id="frmListaArticulos" class="row g-2 g-lg-2 align-items-end">
             <div class="col-12 col-md-4 col-lg-3">
                 <label for="txtCodigo" class="form-label small fw-bold text-muted">Código</label>
-                <input type="text" id="txtCodigo" class="form-control form-control-sm" placeholder="Buscar por código..." maxlength="50" autocomplete="off">
+                <input type="text" id="txtCodigo" class="form-control form-control-sm" placeholder="Buscar por código..." maxlength="50" autocomplete="off" value="{{ filtros.get('codigo', '') }}">
             </div>
-            <div class="col-12 col-md-5 col-lg-4">
+            <div class="col-12 col-md-4 col-lg-3">
                 <label for="txtNombre" class="form-label small fw-bold text-muted">Nombre / Descripción</label>
-                <input type="text" id="txtNombre" class="form-control form-control-sm" placeholder="Buscar en descripción..." maxlength="50" autocomplete="off">
+                <input type="text" id="txtNombre" class="form-control form-control-sm" placeholder="Buscar en descripción..." maxlength="50" autocomplete="off" value="{{ filtros.get('nombre', '') }}">
+            </div>
+            <div class="col-12 col-md-4 col-lg-3">
+                <label for="txtCodigoBomba" class="form-label small fw-bold text-muted">Código Bomba</label>
+                <input type="text" id="txtCodigoBomba" class="form-control form-control-sm" placeholder="Código de bomba asociada..." maxlength="50" autocomplete="off" value="{{ filtros.get('codigo_bomba', '') }}">
             </div>
             <div class="col-12 d-flex align-items-center flex-wrap gap-2 border-top pt-3 mt-3">
                 <button type="submit" class="btn btn-primary btn-sm px-4"><i class="bi bi-search"></i> Consultar</button>
@@ -293,6 +297,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     const IDX_STOCK = 5;
 
     let lastExportArticulos = null;
+    let filtrosActuales = {};
 
     function escapeHtml(s) {
         return String(s || '')
@@ -314,7 +319,8 @@ document.addEventListener('DOMContentLoaded', async function () {
     }
 
     function urlEditar(iditem) {
-        return URL_EDITAR_BASE + String(iditem);
+        const qs = new URLSearchParams(filtrosActuales).toString();
+        return URL_EDITAR_BASE + String(iditem) + (qs ? '?' + qs : '');
     }
 
     function urlHistorial(iditem) {
@@ -549,7 +555,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         ws.getRow(rowIdx).height = 26;
         rowIdx++;
 
-        const metaRow = ws.addRow(['Código filtro', meta.codigo || '(todos)', 'Nombre filtro', meta.nombre || '(todos)']);
+        const metaRow = ws.addRow(['Código filtro', meta.codigo || '(todos)', 'Nombre filtro', meta.nombre || '(todos)', 'Código bomba', meta.codigo_bomba || '(todos)']);
         metaRow.eachCell({ includeEmpty: true }, (cell) => {
             cell.border = allBorders;
         });
@@ -602,12 +608,17 @@ document.addEventListener('DOMContentLoaded', async function () {
         document.getElementById('btnExportExcelArticulos').disabled = true;
         const codigo = document.getElementById('txtCodigo').value.trim();
         const nombre = document.getElementById('txtNombre').value.trim();
+        const codigoBomba = document.getElementById('txtCodigoBomba').value.trim();
+        filtrosActuales = {};
+        if (codigo) filtrosActuales.codigo = codigo;
+        if (nombre) filtrosActuales.nombre = nombre;
+        if (codigoBomba) filtrosActuales.codigo_bomba = codigoBomba;
 
         try {
             const res = await fetch(URL_REPORTE, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ codigo, nombre })
+                body: JSON.stringify({ codigo, nombre, codigo_bomba: codigoBomba })
             });
             const payload = await res.json();
             if (!res.ok || payload.error) {
@@ -627,7 +638,7 @@ document.addEventListener('DOMContentLoaded', async function () {
             lastExportArticulos = {
                 headers: payload.headers,
                 data: payload.data,
-                meta: { codigo, nombre }
+                meta: { codigo, nombre, codigo_bomba: codigoBomba }
             };
             document.getElementById('btnExportExcelArticulos').disabled = payload.data.length === 0;
         } catch (e) {
