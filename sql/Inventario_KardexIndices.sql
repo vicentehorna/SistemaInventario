@@ -1,4 +1,4 @@
--- Índices recomendados para acelerar el kárdex por IdItem (ejecutar una vez en hm_safari).
+-- Índices recomendados para acelerar el kárdex por IdItem (ejecutar una vez en hm_inventario).
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes

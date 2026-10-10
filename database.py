@@ -4233,11 +4233,14 @@ def actualizar_venta(
                 pass
 
 
-def get_lista_ventas_inventario(codigo='', articulo='', cliente=0):
+def get_lista_ventas_inventario(codigo='', articulo='', cliente=0, estado_pago=''):
     """Ejecuta sp_inv_lista_ventas con filtros."""
     conn = None
     codigo_s = (codigo or '').strip()
     articulo_s = (articulo or '').strip()
+    estado_pago_s = (estado_pago or '').strip().upper()
+    if estado_pago_s not in ('', 'PENDIENTE', 'CANCELADO'):
+        estado_pago_s = ''
     try:
         cliente_i = int(cliente or 0)
     except (TypeError, ValueError):
@@ -4246,8 +4249,8 @@ def get_lista_ventas_inventario(codigo='', articulo='', cliente=0):
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute(
-            "EXEC sp_inv_lista_ventas @codigo=?, @articulo=?, @cliente=?",
-            (codigo_s, articulo_s, cliente_i),
+            "EXEC sp_inv_lista_ventas @codigo=?, @articulo=?, @cliente=?, @estadopago=?",
+            (codigo_s, articulo_s, cliente_i, estado_pago_s),
         )
         columns = [col[0] for col in cursor.description]
         rows = []

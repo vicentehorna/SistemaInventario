@@ -81,15 +81,15 @@
     </div>
     <div class="card-body">
         <form id="frmListaVentas" class="row g-2 g-lg-2 align-items-end">
-            <div class="col-12 col-md-4 col-lg-3">
+            <div class="col-12 col-md-6 col-lg-2">
                 <label for="txtCodigo" class="form-label small fw-bold text-muted">Código</label>
                 <input type="text" id="txtCodigo" class="form-control form-control-sm" placeholder="Buscar por código..." maxlength="20" autocomplete="off" value="{{ filtros.get('codigo', '') }}">
             </div>
-            <div class="col-12 col-md-4 col-lg-3">
+            <div class="col-12 col-md-6 col-lg-3">
                 <label for="txtArticulo" class="form-label small fw-bold text-muted">Item</label>
                 <input type="text" id="txtArticulo" class="form-control form-control-sm" placeholder="Buscar por item..." maxlength="50" autocomplete="off" value="{{ filtros.get('articulo', '') }}">
             </div>
-            <div class="col-12 col-md-4 col-lg-4">
+            <div class="col-12 col-md-6 col-lg-4">
                 <label for="selCliente" class="form-label small fw-bold text-muted">Cliente</label>
                 <select id="selCliente" class="form-select form-select-sm">
                     {% set cli_sel = filtros.get('cliente', '0') %}
@@ -97,6 +97,15 @@
                     {% for cli in clientes %}
                     <option value="{{ cli.idempresa }}" {% if cli.idempresa|string == cli_sel %}selected{% endif %}>{{ cli.razonsocial }} (RUC: {{ cli.ruc }})</option>
                     {% endfor %}
+                </select>
+            </div>
+            <div class="col-12 col-md-6 col-lg-3">
+                <label for="selEstadoPago" class="form-label small fw-bold text-muted">Estado de pago</label>
+                <select id="selEstadoPago" class="form-select form-select-sm">
+                    {% set pago_sel = filtros.get('estado_pago', '') %}
+                    <option value="" {% if not pago_sel %}selected{% endif %}>Todos</option>
+                    <option value="PENDIENTE" {% if pago_sel == 'PENDIENTE' %}selected{% endif %}>Pendiente</option>
+                    <option value="CANCELADO" {% if pago_sel == 'CANCELADO' %}selected{% endif %}>Cancelado</option>
                 </select>
             </div>
             <div class="col-12 d-flex align-items-center flex-wrap gap-2 border-top pt-3 mt-3">
@@ -270,7 +279,12 @@ document.addEventListener('DOMContentLoaded', async function () {
         ws.getRow(rowIdx).height = 26;
         rowIdx++;
 
-        const metaRow = ws.addRow(['Código', meta.codigo || '(todos)', 'Item', meta.articulo || '(todos)', 'Cliente', meta.cliente || 'Todos']);
+        const metaRow = ws.addRow([
+            'Código', meta.codigo || '(todos)',
+            'Item', meta.articulo || '(todos)',
+            'Cliente', meta.cliente || 'Todos',
+            'Estado de pago', meta.estado_pago || 'Todos',
+        ]);
         metaRow.eachCell({ includeEmpty: true }, (cell) => {
             cell.border = allBorders;
         });
@@ -350,15 +364,18 @@ document.addEventListener('DOMContentLoaded', async function () {
         const articulo = document.getElementById('txtArticulo').value.trim();
         const cliente = document.getElementById('selCliente').value || '0';
         const clienteLabel = document.getElementById('selCliente').selectedOptions[0]?.text || 'Todos';
+        const estadoPago = document.getElementById('selEstadoPago').value || '';
+        const estadoPagoLabel = document.getElementById('selEstadoPago').selectedOptions[0]?.text || 'Todos';
         filtrosActuales = {};
         if (codigo) filtrosActuales.codigo = codigo;
         if (articulo) filtrosActuales.articulo = articulo;
         if (cliente && cliente !== '0') filtrosActuales.cliente = cliente;
+        if (estadoPago) filtrosActuales.estado_pago = estadoPago;
         try {
             const res = await fetch(URL_REPORTE, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ codigo, articulo, cliente })
+                body: JSON.stringify({ codigo, articulo, cliente, estado_pago: estadoPago })
             });
             const payload = await res.json();
             if (!res.ok || payload.error) {
@@ -373,7 +390,12 @@ document.addEventListener('DOMContentLoaded', async function () {
             lastExportVentas = {
                 headers: payload.headers || [],
                 data: payload.data || [],
-                meta: { codigo, articulo, cliente: cliente === '0' ? 'Todos' : clienteLabel }
+                meta: {
+                    codigo,
+                    articulo,
+                    cliente: cliente === '0' ? 'Todos' : clienteLabel,
+                    estado_pago: estadoPagoLabel,
+                }
             };
             document.getElementById('btnExportExcelVentas').disabled = !payload.data || payload.data.length === 0;
         } catch (e) {

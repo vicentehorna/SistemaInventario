@@ -56,7 +56,8 @@ GO
 CREATE PROCEDURE dbo.sp_inv_lista_ventas
     @codigo VARCHAR(20),
     @articulo VARCHAR(50),
-    @cliente INT
+    @cliente INT,
+    @estadopago CHAR(20) = ''
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -81,6 +82,7 @@ BEGIN
         (@codigo = '' OR d.Codigo LIKE '%' + @codigo + '%')
         AND (@articulo = '' OR d.Descripcion LIKE '%' + @articulo + '%')
         AND (@cliente = 0 OR a.IdCliente = @cliente)
+        AND (@estadopago = '' OR a.EstadoPago = @estadopago)
     ORDER BY a.FechaVenta;
 END
 GO

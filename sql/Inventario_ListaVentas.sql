@@ -3,7 +3,8 @@
 ALTER PROCEDURE [dbo].[sp_inv_lista_ventas]
     @codigo varchar(20),
     @articulo varchar(50),
-    @cliente int
+    @cliente int,
+    @estadopago char(20) = ''
 AS
 BEGIN
     SELECT
@@ -16,7 +17,8 @@ BEGIN
     WHERE
         (@codigo = '' OR d.codigo LIKE '%' + @codigo + '%') AND
         (@articulo = '' OR d.descripcion LIKE '%' + @articulo + '%') AND
-        (@cliente = 0 OR a.IdCliente = @cliente)
+        (@cliente = 0 OR a.IdCliente = @cliente) AND
+        (@estadopago = '' OR a.estadopago = @estadopago)
     ORDER BY 2
 END
 GO

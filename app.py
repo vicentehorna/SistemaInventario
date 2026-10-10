@@ -1830,12 +1830,16 @@ def ventas_guardar():
 def _filtros_lista_ventas(source, prefijo=''):
     """Filtros del listado de ventas (para volver al listado con los mismos filtros)."""
     filtros = {}
-    for clave in ('codigo', 'articulo', 'cliente'):
+    for clave in ('codigo', 'articulo', 'cliente', 'estado_pago'):
         valor = str(source.get(prefijo + clave) or '').strip()
         if not valor:
             continue
         if clave == 'cliente' and (not valor.isdigit() or valor == '0'):
             continue
+        if clave == 'estado_pago':
+            valor = valor.upper()
+            if valor not in ('PENDIENTE', 'CANCELADO'):
+                continue
         filtros[clave] = valor
     return filtros
 
@@ -2142,6 +2146,9 @@ def lista_ventas_post():
         cliente = int(body.get('cliente') or 0)
     except (TypeError, ValueError):
         cliente = 0
+    estado_pago = str(body.get('estado_pago') or body.get('estadopago') or '').strip().upper()
+    if estado_pago not in ('', 'PENDIENTE', 'CANCELADO'):
+        estado_pago = ''
 
     headers_es = [
         'Cliente',
@@ -2156,7 +2163,7 @@ def lista_ventas_post():
     ]
 
     try:
-        rows = get_lista_ventas_inventario(codigo, articulo, cliente)
+        rows = get_lista_ventas_inventario(codigo, articulo, cliente, estado_pago)
         data = []
         ids = []
         for r in rows:
