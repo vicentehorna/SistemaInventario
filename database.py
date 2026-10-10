@@ -3782,6 +3782,7 @@ def insertar_venta(
     incluye_igv,
     estado_pago,
     detalles,
+    nro_dias=0,
 ):
     """
     Registra cabecera y detalle de venta; descuenta stock por cada línea.
@@ -3839,6 +3840,11 @@ def insertar_venta(
     except (ValueError, IndexError, AttributeError):
         return False, "Fecha de venta no válida."
 
+    dias_credito, err_dias = _parse_nro_dias_credito(nro_dias)
+    if err_dias:
+        return False, err_dias
+    fecha_venc = fecha_dt + timedelta(days=dias_credito)
+
     nro_ref = (nro_comprobante_ref or '').strip() or None
 
     conn = None
@@ -3878,10 +3884,10 @@ def insertar_venta(
             INSERT INTO dbo.Inventario_VentasCab (
                 IdCliente, FechaVenta, TipoComprobante, NroComprobanteRef,
                 IncluyeIGV, SubTotal, IGV, Total,
-                EstadoVenta, EstadoPago
+                EstadoVenta, EstadoPago, NroDias, FechaVencimiento
             )
             OUTPUT INSERTED.IdVenta
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVA', ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVA', ?, ?, ?)
             """,
             (
                 id_cliente,
@@ -3893,6 +3899,8 @@ def insertar_venta(
                 float(igv),
                 float(total),
                 estado_pago_val,
+                dias_credito,
+                fecha_venc,
             ),
         )
         row = cursor.fetchone()
@@ -3969,7 +3977,7 @@ def get_venta_por_id(id_venta):
             """
             SELECT
                 v.IdVenta, v.IdCliente, v.FechaVenta, v.TipoComprobante, v.NroComprobanteRef,
-                v.IncluyeIGV, v.EstadoPago, v.EstadoVenta
+                v.IncluyeIGV, v.EstadoPago, v.EstadoVenta, v.NroDias, v.FechaVencimiento
             FROM dbo.Inventario_VentasCab v
             WHERE v.IdVenta = ?
             """,
@@ -4021,6 +4029,7 @@ def actualizar_venta(
     incluye_igv,
     estado_pago,
     detalles,
+    nro_dias=0,
 ):
     """Actualiza venta activa, recalcula detalle y ajusta stock."""
     from decimal import Decimal, ROUND_HALF_UP
@@ -4080,7 +4089,7 @@ def actualizar_venta(
 
         cursor.execute(
             """
-            SELECT EstadoVenta
+            SELECT EstadoVenta, EstadoPago, NroDias
             FROM dbo.Inventario_VentasCab
             WHERE IdVenta = ?
             """,
@@ -4093,6 +4102,15 @@ def actualizar_venta(
         if str(row_venta[0] or '').strip().upper() == 'ANULADA':
             cursor.close()
             return False, "No se puede editar una venta anulada."
+
+        if str(row_venta[1] or '').strip().upper() == 'CANCELADO':
+            dias_credito = int(row_venta[2] or 0)
+        else:
+            dias_credito, err_dias = _parse_nro_dias_credito(nro_dias)
+            if err_dias:
+                cursor.close()
+                return False, err_dias
+        fecha_venc = fecha_dt + timedelta(days=dias_credito)
 
         cursor.execute(
             "SELECT 1 FROM dbo.Inventario_Empresas WHERE IdEmpresa = ? AND EsCliente = 1",
@@ -4127,7 +4145,8 @@ def actualizar_venta(
             """
             UPDATE dbo.Inventario_VentasCab
             SET IdCliente = ?, FechaVenta = ?, TipoComprobante = ?, NroComprobanteRef = ?,
-                IncluyeIGV = ?, SubTotal = ?, IGV = ?, Total = ?, EstadoPago = ?
+                IncluyeIGV = ?, SubTotal = ?, IGV = ?, Total = ?, EstadoPago = ?,
+                NroDias = ?, FechaVencimiento = ?
             WHERE IdVenta = ?
             """,
             (
@@ -4140,6 +4159,8 @@ def actualizar_venta(
                 float(igv),
                 float(total),
                 estado_pago_val,
+                dias_credito,
+                fecha_venc,
                 id_venta,
             ),
         )

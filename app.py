@@ -1680,7 +1680,7 @@ def compras_guardar():
     credito_bloqueado = False
     if id_compra:
         compra_guardada = get_compra_por_id(id_compra)
-        if compra_guardada and _compra_credito_bloqueado(compra_guardada):
+        if compra_guardada and _credito_bloqueado(compra_guardada):
             credito_bloqueado = True
             nro_dias = compra_guardada.get('nrodias') or 0
 
@@ -1706,9 +1706,9 @@ def compras_guardar():
     )
 
 
-def _compra_credito_bloqueado(compra):
-    """Días de crédito solo editables mientras la compra guardada está PENDIENTE."""
-    return str(compra.get('estadopago') or '').strip().upper() == 'CANCELADO'
+def _credito_bloqueado(comprobante):
+    """Días de crédito solo editables mientras la compra o venta guardada está PENDIENTE."""
+    return str(comprobante.get('estadopago') or '').strip().upper() == 'CANCELADO'
 
 
 def _filtros_lista_compras(source, prefijo=''):
@@ -1752,6 +1752,7 @@ def ventas_guardar():
     nro_comprobante_ref = request.form.get('nro_comprobante_ref')
     incluye_igv = request.form.get('incluye_igv') in ('on', '1', 'true', 'True')
     estado_pago = request.form.get('estado_pago')
+    nro_dias = request.form.get('nro_dias')
 
     detalles_raw = request.form.get('detalles_json', '[]')
     try:
@@ -1774,6 +1775,7 @@ def ventas_guardar():
             incluye_igv,
             estado_pago,
             detalles,
+            nro_dias=nro_dias,
         )
         modo_edicion = True
     else:
@@ -1785,12 +1787,22 @@ def ventas_guardar():
             incluye_igv,
             estado_pago,
             detalles,
+            nro_dias=nro_dias,
         )
         modo_edicion = False
 
+    filtros_lista = _filtros_lista_ventas(request.form, 'lista_') if id_venta else {}
+
     if ok:
         flash(msg, 'success')
-        return redirect(url_for('lista_ventas_page'))
+        return redirect(url_for('lista_ventas_page', **filtros_lista))
+
+    credito_bloqueado = False
+    if id_venta:
+        venta_guardada = get_venta_por_id(id_venta)
+        if venta_guardada and _credito_bloqueado(venta_guardada):
+            credito_bloqueado = True
+            nro_dias = venta_guardada.get('nrodias') or 0
 
     flash(msg, 'error')
     return render_template(
@@ -1806,10 +1818,26 @@ def ventas_guardar():
             'nro_comprobante_ref': nro_comprobante_ref,
             'incluye_igv': incluye_igv,
             'estado_pago': estado_pago,
+            'nro_dias': nro_dias,
+            'credito_bloqueado': credito_bloqueado,
+            'filtros_lista': filtros_lista,
             'detalles_json': detalles_raw,
             'modo_edicion': modo_edicion,
         },
     )
+
+
+def _filtros_lista_ventas(source, prefijo=''):
+    """Filtros del listado de ventas (para volver al listado con los mismos filtros)."""
+    filtros = {}
+    for clave in ('codigo', 'articulo', 'cliente'):
+        valor = str(source.get(prefijo + clave) or '').strip()
+        if not valor:
+            continue
+        if clave == 'cliente' and (not valor.isdigit() or valor == '0'):
+            continue
+        filtros[clave] = valor
+    return filtros
 
 
 @app.route('/operaciones/proformas/registro', methods=['GET'])
@@ -2095,7 +2123,11 @@ def lista_proformas_post():
 def lista_ventas_page():
     """Vista de listado de ventas."""
     ensure_user_session()
-    return render_template('lista_ventas.html', clientes=get_clientes_activos())
+    return render_template(
+        'lista_ventas.html',
+        clientes=get_clientes_activos(),
+        filtros=_filtros_lista_ventas(request.args),
+    )
 
 
 @app.route('/operaciones/ventas/listado', methods=['POST'])
@@ -2114,7 +2146,7 @@ def lista_ventas_post():
     headers_es = [
         'Cliente',
         'Fecha venta',
-        'Estado venta',
+        'Fecha Vcto',
         'Estado pago',
         'Código',
         'Artículo',
@@ -2141,7 +2173,7 @@ def lista_ventas_post():
             fila = [
                 _jsonable_value(r.get('razonsocial')),
                 _jsonable_value(r.get('fechaventa')),
-                _jsonable_value(r.get('estadoventa')),
+                _jsonable_value(r.get('fechavencimiento')),
                 _jsonable_value(r.get('estadopago')),
                 _jsonable_value(r.get('codigo')),
                 _jsonable_value(r.get('descripcion')),
@@ -2328,13 +2360,14 @@ def ventas_anular():
 def ventas_editar_page(id_venta):
     """Formulario de ventas en modo edición."""
     ensure_user_session()
+    filtros_lista = _filtros_lista_ventas(request.args)
     venta = get_venta_por_id(id_venta)
     if not venta:
         flash('Venta no encontrada.', 'error')
-        return redirect(url_for('lista_ventas_page'))
+        return redirect(url_for('lista_ventas_page', **filtros_lista))
     if str(venta.get('estadoventa') or '').upper() == 'ANULADA':
         flash('No se puede editar una venta anulada.', 'error')
-        return redirect(url_for('lista_ventas_page'))
+        return redirect(url_for('lista_ventas_page', **filtros_lista))
 
     fecha_venta = venta.get('fechaventa')
     fecha_form = _fecha_hoy_app().isoformat()
@@ -2365,6 +2398,9 @@ def ventas_editar_page(id_venta):
             'nro_comprobante_ref': venta.get('nrocomprobanteref') or '',
             'incluye_igv': bool(venta.get('incluyeigv')),
             'estado_pago': venta.get('estadopago') or 'PENDIENTE',
+            'nro_dias': venta.get('nrodias') or 0,
+            'credito_bloqueado': _credito_bloqueado(venta),
+            'filtros_lista': filtros_lista,
             'detalles_json': detalles_json,
             'modo_edicion': True,
         },
@@ -2415,7 +2451,7 @@ def compras_editar_page(id_compra):
             'incluye_igv': bool(compra.get('incluyeigv')),
             'estado_pago': compra.get('estadopago') or 'PENDIENTE',
             'nro_dias': compra.get('nrodias') or 0,
-            'credito_bloqueado': _compra_credito_bloqueado(compra),
+            'credito_bloqueado': _credito_bloqueado(compra),
             'filtros_lista': filtros_lista,
             'detalles_json': detalles_json,
             'modo_edicion': True,

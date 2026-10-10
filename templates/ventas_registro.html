@@ -26,7 +26,34 @@
         margin: -0.25rem 0 0;
     }
 
-    .ventas-view .section-header { margin-bottom: 1.75rem; }
+    .ventas-view .section-header {
+        margin-bottom: 1.75rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        flex-wrap: wrap;
+        gap: 1rem;
+    }
+
+    .ventas-view .btn-volver-listado {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.4rem 0.85rem;
+        font-size: 0.875rem;
+        color: #475569;
+        background-color: var(--surface);
+        border: 1px solid #cbd5e1;
+        border-radius: 6px;
+        text-decoration: none;
+        white-space: nowrap;
+        transition: all 0.2s;
+    }
+    .ventas-view .btn-volver-listado:hover {
+        background-color: #f1f5f9;
+        border-color: #94a3b8;
+        color: var(--text-dark);
+    }
     .ventas-view .section-header h1 {
         font-size: 1.5rem;
         font-weight: 600;
@@ -65,7 +92,13 @@
 
     .ventas-view .grid-cabecera-sec {
         margin-top: 1.25rem;
-        grid-template-columns: 1fr 1fr 2fr;
+        grid-template-columns: 1fr 1fr 1fr 1fr;
+    }
+
+    .ventas-view .input-modern[readonly] {
+        background-color: #f1f5f9;
+        color: var(--text-muted);
+        cursor: default;
     }
 
     .ventas-view .grid-selector-item {
@@ -293,16 +326,27 @@
 {% block content %}
 {% set fp = form_preservado or {} %}
 {% set modo_edicion = fp.get('modo_edicion') %}
+{% set filtros_lista = fp.get('filtros_lista') or {} %}
 <div class="ventas-view view-container">
     <div class="section-header">
-        <h1>{% if modo_edicion %}Editar Venta{% else %}Salida de Almacén / Registro de Venta{% endif %}</h1>
-        <p>{% if modo_edicion %}Actualice los datos de la venta. El stock se recalculará según el nuevo detalle.{% else %}Registre ventas a clientes. Al guardar se descuenta el stock de cada artículo despachado.{% endif %}</p>
+        <div>
+            <h1>{% if modo_edicion %}Editar Venta{% else %}Salida de Almacén / Registro de Venta{% endif %}</h1>
+            <p>{% if modo_edicion %}Actualice los datos de la venta. El stock se recalculará según el nuevo detalle.{% else %}Registre ventas a clientes. Al guardar se descuenta el stock de cada artículo despachado.{% endif %}</p>
+        </div>
+        {% if fp.get('id_venta') %}
+        <a href="{{ url_for('lista_ventas_page', **filtros_lista) }}" class="btn-volver-listado">
+            <i class="bi bi-arrow-left" aria-hidden="true"></i> Volver al listado
+        </a>
+        {% endif %}
     </div>
 
     <form id="form-venta" action="{{ url_for('ventas_guardar') }}" method="POST">
         {% if fp.get('id_venta') %}
         <input type="hidden" name="id_venta" value="{{ fp.get('id_venta') }}">
         {% endif %}
+        {% for clave, valor in filtros_lista.items() %}
+        <input type="hidden" name="lista_{{ clave }}" value="{{ valor }}">
+        {% endfor %}
         <input type="hidden" name="detalles_json" id="detalles_json" value="{{ fp.get('detalles_json', '[]') }}">
 
         <div class="form-card-modern">
@@ -365,6 +409,21 @@
                         <option value="PENDIENTE" {% if pago_sel == 'PENDIENTE' %}selected{% endif %}>Pendiente</option>
                         <option value="CANCELADO" {% if pago_sel == 'CANCELADO' %}selected{% endif %}>Cancelado</option>
                     </select>
+                </div>
+
+                {% set credito_bloqueado = fp.get('credito_bloqueado') %}
+                <div class="form-field">
+                    <label for="nro_dias">Días de Crédito</label>
+                    <input type="number" id="nro_dias" name="nro_dias"
+                           class="input-modern{% if not credito_bloqueado %} input-required{% endif %}" required
+                           min="0" step="1" value="{{ fp.get('nro_dias') if fp.get('nro_dias') not in (None, '') else 0 }}"
+                           {% if credito_bloqueado %}readonly tabindex="-1" title="No editable: la venta ya está cancelada"{% endif %}>
+                </div>
+
+                <div class="form-field">
+                    <label for="fecha_vencimiento">Fecha de Vencimiento</label>
+                    <input type="date" id="fecha_vencimiento" class="input-modern" readonly tabindex="-1"
+                           title="Fecha de venta + días de crédito">
                 </div>
             </div>
         </div>
@@ -439,7 +498,7 @@
         </div>
 
         <div class="form-card-modern form-actions" style="border: none; box-shadow: none; padding-top: 0;">
-            <a href="{% if modo_edicion %}{{ url_for('lista_ventas_page') }}{% else %}{{ url_for('dashboard') }}{% endif %}" class="btn-modern btn-secondary">Cancelar</a>
+            <a href="{% if fp.get('id_venta') %}{{ url_for('lista_ventas_page', **filtros_lista) }}{% else %}{{ url_for('dashboard') }}{% endif %}" class="btn-modern btn-secondary">Cancelar</a>
             <button type="submit" class="btn-modern btn-primary" id="btn-guardar-venta">
                 <i class="bi {% if modo_edicion %}bi-pencil-square{% else %}bi-box-arrow-up{% endif %}" aria-hidden="true"></i>
                 {% if modo_edicion %}Guardar Cambios{% else %}Procesar Venta{% endif %}
@@ -737,6 +796,32 @@
             console.warn('No se pudieron restaurar detalles:', e);
         }
     }
+
+    const fechaVenta = document.getElementById('fecha_venta');
+    const nroDias = document.getElementById('nro_dias');
+    const fechaVencimiento = document.getElementById('fecha_vencimiento');
+
+    function actualizarFechaVencimiento() {
+        const partes = String(fechaVenta.value || '').split('-');
+        if (partes.length !== 3) {
+            fechaVencimiento.value = '';
+            return;
+        }
+        let dias = parseInt(nroDias.value, 10);
+        if (!Number.isFinite(dias) || dias < 0) dias = 0;
+        const fecha = new Date(Date.UTC(parseInt(partes[0], 10), parseInt(partes[1], 10) - 1, parseInt(partes[2], 10)));
+        if (isNaN(fecha.getTime())) {
+            fechaVencimiento.value = '';
+            return;
+        }
+        fecha.setUTCDate(fecha.getUTCDate() + dias);
+        fechaVencimiento.value = fecha.toISOString().slice(0, 10);
+    }
+
+    fechaVenta.addEventListener('change', actualizarFechaVencimiento);
+    fechaVenta.addEventListener('input', actualizarFechaVencimiento);
+    nroDias.addEventListener('input', actualizarFechaVencimiento);
+    actualizarFechaVencimiento();
 
     document.getElementById('btn-agregar-item').addEventListener('click', agregarFilaItem);
     buscadorItem.addEventListener('input', function () {

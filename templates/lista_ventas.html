@@ -83,18 +83,19 @@
         <form id="frmListaVentas" class="row g-2 g-lg-2 align-items-end">
             <div class="col-12 col-md-4 col-lg-3">
                 <label for="txtCodigo" class="form-label small fw-bold text-muted">Código</label>
-                <input type="text" id="txtCodigo" class="form-control form-control-sm" placeholder="Buscar por código..." maxlength="20" autocomplete="off">
+                <input type="text" id="txtCodigo" class="form-control form-control-sm" placeholder="Buscar por código..." maxlength="20" autocomplete="off" value="{{ filtros.get('codigo', '') }}">
             </div>
             <div class="col-12 col-md-4 col-lg-3">
                 <label for="txtArticulo" class="form-label small fw-bold text-muted">Item</label>
-                <input type="text" id="txtArticulo" class="form-control form-control-sm" placeholder="Buscar por item..." maxlength="50" autocomplete="off">
+                <input type="text" id="txtArticulo" class="form-control form-control-sm" placeholder="Buscar por item..." maxlength="50" autocomplete="off" value="{{ filtros.get('articulo', '') }}">
             </div>
             <div class="col-12 col-md-4 col-lg-4">
                 <label for="selCliente" class="form-label small fw-bold text-muted">Cliente</label>
                 <select id="selCliente" class="form-select form-select-sm">
-                    <option value="0" selected>Todos</option>
+                    {% set cli_sel = filtros.get('cliente', '0') %}
+                    <option value="0" {% if cli_sel == '0' %}selected{% endif %}>Todos</option>
                     {% for cli in clientes %}
-                    <option value="{{ cli.idempresa }}">{{ cli.razonsocial }} (RUC: {{ cli.ruc }})</option>
+                    <option value="{{ cli.idempresa }}" {% if cli.idempresa|string == cli_sel %}selected{% endif %}>{{ cli.razonsocial }} (RUC: {{ cli.ruc }})</option>
                     {% endfor %}
                 </select>
             </div>
@@ -128,6 +129,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     const URL_ANULAR = {{ url_for('ventas_anular') | tojson }};
     const URL_EDITAR_BASE = {{ url_for('ventas_editar_page', id_venta=0) | tojson }}.replace(/0$/, '');
     let lastExportVentas = null;
+    let filtrosActuales = {};
     const IDX_COL_TOTAL_LINEA = 8;
 
     function escapeHtml(s) {
@@ -149,7 +151,8 @@ document.addEventListener('DOMContentLoaded', async function () {
     }
 
     function urlEditar(idVenta) {
-        return URL_EDITAR_BASE + String(idVenta);
+        const qs = new URLSearchParams(filtrosActuales).toString();
+        return URL_EDITAR_BASE + String(idVenta) + (qs ? '?' + qs : '');
     }
 
     function sumarTotalLinea(rows) {
@@ -202,7 +205,6 @@ document.addEventListener('DOMContentLoaded', async function () {
         let html = '';
         rows.forEach(function (row, index) {
             const idVenta = ids[index];
-            const estadoVenta = String((row && row[2]) || '').toUpperCase();
             const estadoPago = String((row && row[3]) || '').toUpperCase();
             const filaClase = estadoPago === 'PENDIENTE' ? ' fila-pago-pendiente' : '';
             html += '<tr class="' + filaClase.trim() + '">';
@@ -215,12 +217,8 @@ document.addEventListener('DOMContentLoaded', async function () {
                 html += '<span class="acciones-wrap">';
                 html += '<a href="' + escapeHtml(urlEditar(idVenta)) + '" class="accion-icon accion-editar" title="Editar">';
                 html += '<i class="bi bi-pencil" aria-hidden="true"></i></a>';
-                if (estadoVenta !== 'ANULADA' && estadoVenta !== 'ANULADO') {
-                    html += '<button type="button" class="accion-icon accion-anular btn-anular-venta" data-idventa="' + escapeHtml(String(idVenta)) + '" title="Anular">';
-                    html += '<i class="bi bi-slash-circle" aria-hidden="true"></i></button>';
-                } else {
-                    html += '<span class="text-muted">—</span>';
-                }
+                html += '<button type="button" class="accion-icon accion-anular btn-anular-venta" data-idventa="' + escapeHtml(String(idVenta)) + '" title="Anular">';
+                html += '<i class="bi bi-slash-circle" aria-hidden="true"></i></button>';
                 html += '</span></td>';
             } else {
                 html += '<td class="text-center text-muted">—</td>';
@@ -352,6 +350,10 @@ document.addEventListener('DOMContentLoaded', async function () {
         const articulo = document.getElementById('txtArticulo').value.trim();
         const cliente = document.getElementById('selCliente').value || '0';
         const clienteLabel = document.getElementById('selCliente').selectedOptions[0]?.text || 'Todos';
+        filtrosActuales = {};
+        if (codigo) filtrosActuales.codigo = codigo;
+        if (articulo) filtrosActuales.articulo = articulo;
+        if (cliente && cliente !== '0') filtrosActuales.cliente = cliente;
         try {
             const res = await fetch(URL_REPORTE, {
                 method: 'POST',

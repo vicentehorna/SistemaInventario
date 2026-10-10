@@ -20,6 +20,8 @@ CREATE TABLE Inventario_VentasCab (
     EstadoVenta VARCHAR(15) NOT NULL CONSTRAINT DF_Ventas_Estado DEFAULT 'ACTIVA',
     EstadoPago VARCHAR(15) NOT NULL CONSTRAINT DF_Ventas_EstadoPago DEFAULT 'PENDIENTE',
     FechaRegistro DATETIME CONSTRAINT DF_Ventas_FechaReg DEFAULT GETDATE(),
+    NroDias INT NOT NULL CONSTRAINT DF_Ventas_NroDias DEFAULT 0,
+    FechaVencimiento DATETIME NULL,
     CONSTRAINT PK_Inventario_VentasCab PRIMARY KEY CLUSTERED (IdVenta),
     CONSTRAINT FK_VentasCab_Empresas FOREIGN KEY (IdCliente)
         REFERENCES Inventario_Empresas (IdEmpresa)
@@ -69,7 +71,8 @@ BEGIN
         b.PrecioUnitario,
         b.Cantidad,
         b.TotalLinea,
-        a.IdVenta
+        a.IdVenta,
+        a.FechaVencimiento
     FROM dbo.Inventario_VentasCab a
     INNER JOIN dbo.Inventario_VentasDet b ON a.IdVenta = b.IdVenta
     INNER JOIN dbo.Inventario_Empresas c ON a.IdCliente = c.IdEmpresa AND c.EsCliente = 1
