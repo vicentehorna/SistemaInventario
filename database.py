@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 import pyodbc
 import platform
 from datetime import date, datetime, timedelta
@@ -4886,6 +4887,179 @@ def get_lista_proformas_inventario(codigo='', articulo='', cliente=0):
     except Exception as e:
         _logger_db.exception("get_lista_proformas_inventario: %s", e)
         raise
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def _filas_a_dicts(cursor):
+    columns = [col[0].lower() for col in cursor.description]
+    return [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+
+def get_empresa_config(company=None):
+    """Datos básicos de la empresa (SY_Company). Sin company toma la primera registrada."""
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        sql = """
+            SELECT TOP 1 Company AS company, RUC AS ruc, Description AS razonsocial,
+                   Address AS direccion, Telephone AS telefono
+            FROM dbo.SY_Company
+        """
+        company_s = str(company or '').strip()
+        if company_s:
+            cursor.execute(sql + " WHERE Company = ?", (company_s,))
+        else:
+            cursor.execute(sql + " ORDER BY Company")
+        filas = _filas_a_dicts(cursor)
+        cursor.close()
+        if not filas:
+            return None
+        return {k: (v.strip() if isinstance(v, str) else v) for k, v in filas[0].items()}
+    except Exception as e:
+        _logger_db.exception("get_empresa_config: %s", e)
+        return None
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def actualizar_empresa_config(company, ruc, razon_social, direccion, telefono, usuario=None):
+    """Actualiza RUC, razón social, dirección y teléfono emisor en SY_Company."""
+    company_s = str(company or '').strip()
+    ruc_s = str(ruc or '').strip()
+    razon_s = ' '.join(str(razon_social or '').split())
+    direccion_s = ' '.join(str(direccion or '').split())
+    telefono_s = re.sub(r'\D', '', str(telefono or ''))
+
+    if not company_s:
+        return False, "No se encontró la empresa a configurar."
+    if not re.fullmatch(r'\d{11}', ruc_s):
+        return False, "El RUC debe tener 11 dígitos."
+    if not razon_s:
+        return False, "Ingrese la razón social."
+    if len(razon_s) > 40:
+        return False, "La razón social admite como máximo 40 caracteres."
+    if len(direccion_s) > 255:
+        return False, "La dirección admite como máximo 255 caracteres."
+    if not re.fullmatch(r'9\d{8}', telefono_s):
+        return False, "El teléfono emisor debe ser un celular de 9 dígitos que empiece con 9."
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            UPDATE dbo.SY_Company
+            SET RUC = ?, Description = ?, Address = ?, Telephone = ?,
+                XLastUser = ?, XLastDate = GETDATE()
+            WHERE Company = ?
+            """,
+            (ruc_s, razon_s, direccion_s or None, telefono_s, str(usuario or 'WEB')[:20], company_s),
+        )
+        if cursor.rowcount == 0:
+            conn.rollback()
+            return False, "No se encontró la empresa a configurar."
+        conn.commit()
+        cursor.close()
+        return True, "Datos de la empresa actualizados correctamente."
+    except Exception as e:
+        _logger_db.exception("actualizar_empresa_config: %s", e)
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        return False, "Error al guardar los datos de la empresa."
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def crear_solicitud_alerta(company, usuario, fecha_solicitud, tipo='CLIENTES_HOY'):
+    """Registra una solicitud de envío de alertas. Retorna (ok, mensaje, id_solicitud)."""
+    company_s = str(company or '').strip()
+    if not company_s:
+        return False, "No se encontró la empresa configurada.", None
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT TOP 1 IdSolicitud FROM dbo.Inventario_AlertasSolicitud
+            WHERE Company = ? AND Estado IN ('PENDIENTE', 'PROCESANDO')
+            """,
+            (company_s,),
+        )
+        if cursor.fetchone():
+            cursor.close()
+            return False, "Ya hay un envío de alertas en curso. Espere a que termine.", None
+        cursor.execute(
+            """
+            INSERT INTO dbo.Inventario_AlertasSolicitud (Company, Tipo, Estado, Usuario, FechaSolicitud)
+            OUTPUT INSERTED.IdSolicitud
+            VALUES (?, ?, 'PENDIENTE', ?, ?)
+            """,
+            (company_s, tipo, str(usuario or '')[:50] or None, fecha_solicitud),
+        )
+        id_solicitud = int(cursor.fetchone()[0])
+        conn.commit()
+        cursor.close()
+        return True, "Solicitud de envío registrada. Las alertas saldrán en menos de un minuto.", id_solicitud
+    except Exception as e:
+        _logger_db.exception("crear_solicitud_alerta: %s", e)
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        err = str(e).lower()
+        if 'invalid object name' in err and 'alertassolicitud' in err:
+            return False, "Falta la tabla de alertas. Ejecute sql/Inventario_AlertasSolicitud.sql.", None
+        return False, "Error al registrar la solicitud de envío.", None
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def get_solicitudes_alerta(company, limite=10):
+    """Últimas solicitudes de envío de alertas de la empresa."""
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT TOP (?) IdSolicitud, Tipo, Estado, Usuario, FechaSolicitud, FechaInicio, FechaFin,
+                   Enviados, Fallidos, SinCelular, Resultado
+            FROM dbo.Inventario_AlertasSolicitud
+            WHERE Company = ?
+            ORDER BY IdSolicitud DESC
+            """,
+            (int(limite), str(company or '').strip()),
+        )
+        filas = _filas_a_dicts(cursor)
+        cursor.close()
+        return filas
+    except Exception as e:
+        _logger_db.exception("get_solicitudes_alerta: %s", e)
+        return []
     finally:
         if conn:
             try:

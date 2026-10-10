@@ -102,6 +102,10 @@ from database import (
     get_lista_proformas_inventario,
     get_proforma_por_id,
     actualizar_proforma,
+    get_empresa_config,
+    actualizar_empresa_config,
+    crear_solicitud_alerta,
+    get_solicitudes_alerta,
 )
 
 load_dotenv()
@@ -2347,6 +2351,86 @@ def reporte_compras_periodo_post():
     except Exception as e:
         logging.exception('reporte_compras_periodo_post')
         return jsonify({'error': str(e)}), 500
+
+
+def _empresa_config_actual():
+    return get_empresa_config(session.get('company') or None)
+
+
+def _fecha_hora_txt(valor):
+    return valor.strftime('%d/%m/%Y %H:%M') if hasattr(valor, 'strftime') else ''
+
+
+@app.route('/configuracion/empresa', methods=['GET'])
+@login_required
+def configuracion_empresa_page():
+    """Datos básicos de la empresa y envío manual de alertas por WhatsApp."""
+    ensure_user_session()
+    return render_template('configuracion_empresa.html', empresa=_empresa_config_actual() or {})
+
+
+@app.route('/configuracion/empresa/guardar', methods=['POST'])
+@login_required
+def configuracion_empresa_guardar():
+    ensure_user_session()
+    empresa = _empresa_config_actual() or {}
+    form = {
+        'ruc': request.form.get('ruc'),
+        'razonsocial': request.form.get('razonsocial'),
+        'direccion': request.form.get('direccion'),
+        'telefono': request.form.get('telefono'),
+    }
+    ok, msg = actualizar_empresa_config(
+        empresa.get('company'),
+        form['ruc'],
+        form['razonsocial'],
+        form['direccion'],
+        form['telefono'],
+        usuario=getattr(current_user, 'username', None),
+    )
+    flash(msg, 'success' if ok else 'error')
+    if ok:
+        return redirect(url_for('configuracion_empresa_page'))
+    return render_template('configuracion_empresa.html', empresa={**empresa, **form})
+
+
+@app.route('/configuracion/alertas/enviar', methods=['POST'])
+@login_required
+def configuracion_alertas_enviar():
+    """Registra la solicitud; el script del servidor envía los WhatsApp con Evolution API."""
+    ensure_user_session()
+    empresa = _empresa_config_actual() or {}
+    if not str(empresa.get('telefono') or '').strip():
+        return jsonify({'ok': False, 'error': 'Configure y guarde primero el teléfono emisor.'}), 400
+    ok, msg, id_solicitud = crear_solicitud_alerta(
+        empresa.get('company'),
+        getattr(current_user, 'username', None),
+        datetime.now(_APP_TZ).replace(tzinfo=None),
+    )
+    if not ok:
+        return jsonify({'ok': False, 'error': msg}), 400
+    return jsonify({'ok': True, 'message': msg, 'id_solicitud': id_solicitud})
+
+
+@app.route('/configuracion/alertas/solicitudes', methods=['GET'])
+@login_required
+def configuracion_alertas_solicitudes():
+    ensure_user_session()
+    empresa = _empresa_config_actual() or {}
+    data = []
+    for s in get_solicitudes_alerta(empresa.get('company')):
+        data.append({
+            'id': s.get('idsolicitud'),
+            'estado': str(s.get('estado') or '').strip(),
+            'usuario': s.get('usuario') or '',
+            'fecha_solicitud': _fecha_hora_txt(s.get('fechasolicitud')),
+            'fecha_fin': _fecha_hora_txt(s.get('fechafin')),
+            'enviados': s.get('enviados') or 0,
+            'fallidos': s.get('fallidos') or 0,
+            'sin_celular': s.get('sincelular') or 0,
+            'resultado': s.get('resultado') or '',
+        })
+    return jsonify({'data': data})
 
 
 @app.route('/operaciones/ventas/anular', methods=['POST'])

@@ -387,6 +387,13 @@
                         <p class="sidebar-section-title text-uppercase fw-bold opacity-50">Configuración</p>
                     </li>
 
+                    <li class="{{ 'active' if request.endpoint in ('configuracion_empresa_page', 'configuracion_empresa_guardar') else '' }}">
+                        <a href="{{ url_for('configuracion_empresa_page') }}" class="sidebar-link" title="Datos de la Empresa">
+                            <i class="bi bi-gear sidebar-icon" aria-hidden="true"></i>
+                            <span class="sidebar-link-text">Datos de la Empresa</span>
+                        </a>
+                    </li>
+
                     <li class="{{ 'active' if request.endpoint in ('articulos_page', 'articulos_editar_page') else '' }}">
                         <a href="{{ url_for('articulos_page') }}" class="sidebar-link" title="Registrar Artículos">
                             <i class="bi bi-plus-square sidebar-icon" aria-hidden="true"></i>
