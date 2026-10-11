@@ -95,6 +95,7 @@ from database import (
     get_lista_ventas_inventario,
     get_reporte_ventas_por_periodo,
     get_reporte_compras_por_periodo,
+    get_reporte_clientes,
     anular_venta,
     get_venta_por_id,
     actualizar_venta,
@@ -2358,6 +2359,60 @@ def reporte_compras_periodo_post():
         return jsonify({'error': str(e)}), 400
     except Exception as e:
         logging.exception('reporte_compras_periodo_post')
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/reportes/clientes', methods=['GET'])
+@login_required
+def reporte_clientes_page():
+    """Reporte de clientes con el importe vendido y la fecha de su última venta."""
+    ensure_user_session()
+    hoy = _fecha_hoy_app()
+    return render_template(
+        'reporte_clientes.html',
+        fecha_desde=date(hoy.year, 1, 1).isoformat(),
+        fecha_hasta=hoy.isoformat(),
+    )
+
+
+@app.route('/reportes/clientes/listado', methods=['POST'])
+@login_required
+def reporte_clientes_post():
+    """JSON del Reporte de Clientes."""
+    ensure_user_session()
+    body = request.get_json(silent=True) or {}
+    fecha_desde = str(body.get('fecha_desde') or '').strip()
+    fecha_hasta = str(body.get('fecha_hasta') or '').strip()
+    cliente = str(body.get('cliente') or '').strip()
+
+    headers_es = [
+        'Orden',
+        'RUC',
+        'Cliente',
+        'Importe Total',
+        'Fecha Última Venta',
+    ]
+
+    try:
+        rows = get_reporte_clientes(fecha_desde, fecha_hasta, cliente)
+        data = []
+        for indice, r in enumerate(rows, start=1):
+            try:
+                importe = float(r.get('importetotal') or 0)
+            except (TypeError, ValueError):
+                importe = 0.0
+            data.append([
+                indice,
+                _jsonable_value(r.get('ruc')),
+                _jsonable_value(r.get('razonsocial')),
+                round(importe, 2),
+                _jsonable_value(r.get('fechaultimaventa')),
+            ])
+        return jsonify({'headers': headers_es, 'data': data})
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        logging.exception('reporte_clientes_post')
         return jsonify({'error': str(e)}), 500
 
 

@@ -486,6 +486,13 @@
                         </a>
                     </li>
 
+                    <li class="{{ 'active' if request.endpoint == 'reporte_clientes_page' else '' }}">
+                        <a href="{{ url_for('reporte_clientes_page') }}" class="sidebar-link" title="Reporte de Clientes">
+                            <i class="bi bi-people sidebar-icon" aria-hidden="true"></i>
+                            <span class="sidebar-link-text">Reporte de Clientes</span>
+                        </a>
+                    </li>
+
                     <hr class="mx-3 opacity-25 mt-3 mb-2">
 
                     <li>

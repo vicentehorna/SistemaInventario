@@ -4456,6 +4456,64 @@ def get_reporte_compras_por_periodo(fecha_desde, fecha_hasta, proveedor=0, item=
                 pass
 
 
+def get_reporte_clientes(fecha_desde, fecha_hasta, cliente=''):
+    """
+    Clientes con ventas en un rango de fechas: importe total vendido y fecha de la última venta.
+    Excluye ventas anuladas. cliente filtra por RUC o razón social, coincidencia parcial.
+    """
+    desde = _fecha_filtro_reporte(fecha_desde, 'Fecha desde')
+    hasta = _fecha_filtro_reporte(fecha_hasta, 'Fecha hasta')
+    if desde > hasta:
+        raise ValueError('La fecha desde no puede ser mayor que la fecha hasta.')
+
+    patron_cliente = _patron_busqueda_item(cliente)
+    desde_dt = datetime(desde.year, desde.month, desde.day)
+    hasta_exc = datetime(hasta.year, hasta.month, hasta.day) + timedelta(days=1)
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT
+                e.RUC AS Ruc,
+                e.RazonSocial AS RazonSocial,
+                SUM(v.Total) AS ImporteTotal,
+                MAX(v.FechaVenta) AS FechaUltimaVenta
+            FROM dbo.Inventario_VentasCab v
+            INNER JOIN dbo.Inventario_Empresas e ON e.IdEmpresa = v.IdCliente
+            WHERE UPPER(LTRIM(RTRIM(ISNULL(v.EstadoVenta, '')))) NOT IN ('ANULADA', 'ANULADO')
+              AND v.FechaVenta >= ?
+              AND v.FechaVenta < ?
+              AND (
+                    ? = N''
+                    OR e.RUC LIKE ?
+                    OR e.RazonSocial LIKE ?
+                  )
+            GROUP BY e.IdEmpresa, e.RUC, e.RazonSocial
+            ORDER BY SUM(v.Total) DESC, e.RazonSocial
+            """,
+            (desde_dt, hasta_exc, patron_cliente, patron_cliente, patron_cliente),
+        )
+        columns = [col[0] for col in cursor.description]
+        rows = []
+        for row in cursor.fetchall():
+            fila = {col: val for col, val in zip(columns, row)}
+            rows.append({k.lower(): v for k, v in fila.items()})
+        cursor.close()
+        return rows
+    except Exception as e:
+        _logger_db.exception("get_reporte_clientes: %s", e)
+        raise
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
 def anular_venta(id_venta):
     """Anula una venta activa y devuelve el stock del detalle al almacén."""
     conn = None
