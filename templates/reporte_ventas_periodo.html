@@ -71,6 +71,50 @@
     .table-reporte-ventas tr.fila-mas-vendido td {
         background-color: #ecfdf5;
     }
+
+    .table-reporte-ventas th.col-toggle,
+    .table-reporte-ventas td.col-toggle {
+        width: 34px;
+        text-align: center;
+    }
+
+    .table-reporte-ventas tr.fila-item {
+        cursor: pointer;
+    }
+
+    .table-reporte-ventas tr.fila-item.abierta td {
+        background-color: #eef4ff;
+        font-weight: 600;
+    }
+
+    .table-reporte-ventas .icono-toggle {
+        font-size: 1rem;
+        color: #0d6efd;
+        line-height: 1;
+    }
+
+    .table-reporte-ventas tr.fila-detalle > td {
+        background-color: #fafbfc;
+        padding: 0.5rem 0.75rem 0.75rem 2.5rem;
+    }
+
+    .tabla-detalle-item {
+        font-size: 11.5px;
+        margin-bottom: 0;
+        background-color: #fff;
+    }
+
+    .tabla-detalle-item thead th {
+        position: static;
+        background-color: #f1f3f5;
+        box-shadow: none;
+        font-weight: 700;
+    }
+
+    .tabla-detalle-item tfoot td {
+        font-weight: 700;
+        background-color: #f8f9fa;
+    }
 </style>
 {% endblock %}
 
@@ -78,7 +122,7 @@
 <div class="card shadow-sm border-0 mb-4">
     <div class="card-header bg-white border-bottom-0 pt-4 pb-0">
         <h5 class="mb-0 fw-bold text-secondary"><i class="bi bi-bar-chart-line"></i> Ventas por Periodo</h5>
-        <p class="text-muted small mb-0 mt-2">Ítems vendidos en el periodo. Haga clic en el título de una columna para ordenar.</p>
+        <p class="text-muted small mb-0 mt-2">Ítems vendidos en el periodo. Haga clic en el título de una columna para ordenar y en un ítem para ver a quién se vendió.</p>
     </div>
     <div class="card-body">
         <form id="frmReporteVentasPeriodo" class="row g-2 g-lg-2 align-items-end">
@@ -128,6 +172,7 @@
 <script>
 document.addEventListener('DOMContentLoaded', async function () {
     const URL_REPORTE = {{ url_for('reporte_ventas_periodo_post') | tojson }};
+    const URL_DETALLE = {{ url_for('reporte_ventas_periodo_detalle_post') | tojson }};
     const IDX_ORDEN = 0;
     const IDX_FECHA = 3;
     const IDX_CANTIDAD = 4;
@@ -135,6 +180,10 @@ document.addEventListener('DOMContentLoaded', async function () {
     const IDX_COMPRA_EQ = 6;
     const IDX_UTILIDAD = 7;
     const IDX_STOCK = 8;
+    const IDX_ID = 9;
+    let periodoConsultado = { desde: '', hasta: '', cliente: '0' };
+    const abiertos = new Set();
+    const detalles = new Map();
     let cabeceras = [];
     let filasBase = [];
     let sortCol = IDX_CANTIDAD;
@@ -212,7 +261,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         const tbody = document.getElementById('tbody-reporte');
         const rows = filasOrdenadas();
 
-        thead.innerHTML = '<tr>' + cabeceras.map(function (h, idx) {
+        thead.innerHTML = '<tr><th class="col-toggle" aria-label="Detalle"></th>' + cabeceras.map(function (h, idx) {
             const align = esNumerico(idx) ? ' text-end' : '';
             const marca = idx === sortCol
                 ? '<span class="marca-orden" aria-hidden="true">' + (sortDesc ? '&#9660;' : '&#9650;') + '</span>'
@@ -236,16 +285,23 @@ document.addEventListener('DOMContentLoaded', async function () {
             });
         });
 
+        const totalColumnas = cabeceras.length + 1;
         if (!rows.length) {
-            tbody.innerHTML = '<tr><td colspan="' + cabeceras.length + '" class="text-center text-muted py-3">No hay ventas en el periodo seleccionado.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="' + totalColumnas + '" class="text-center text-muted py-3">No hay ventas en el periodo seleccionado.</td></tr>';
             document.getElementById('lblRowCount').textContent = '0';
             return;
         }
 
         let html = '';
         rows.forEach(function (row, index) {
-            html += '<tr' + (index === 0 ? ' class="fila-mas-vendido"' : '') + '>';
-            (row || []).forEach(function (val, idx) {
+            const id = String(row[IDX_ID]);
+            const abierto = abiertos.has(id);
+            html += '<tr class="fila-item' + (index === 0 ? ' fila-mas-vendido' : '') + (abierto ? ' abierta' : '') + '"'
+                + ' data-id="' + escapeHtml(id) + '" title="' + (abierto ? 'Ocultar ventas' : 'Ver ventas') + '">';
+            html += '<td class="col-toggle"><i class="bi ' + (abierto ? 'bi-dash-circle' : 'bi-plus-circle')
+                + ' icono-toggle" aria-hidden="true"></i></td>';
+            cabeceras.forEach(function (_, idx) {
+                const val = row[idx];
                 let clases = esNumerico(idx) ? 'text-end' : '';
                 let texto = val === null || val === undefined ? '' : String(val);
                 if (idx === IDX_CANTIDAD || idx === IDX_STOCK || idx === IDX_ORDEN) texto = fmtCantidad(val);
@@ -257,10 +313,13 @@ document.addEventListener('DOMContentLoaded', async function () {
                     + '>' + escapeHtml(texto) + '</td>';
             });
             html += '</tr>';
+            if (abierto) {
+                html += '<tr class="fila-detalle"><td colspan="' + totalColumnas + '">' + htmlDetalle(id) + '</td></tr>';
+            }
         });
 
         html += '<tr class="fila-totales">';
-        html += '<td colspan="4" class="text-end">Total</td>';
+        html += '<td colspan="5" class="text-end">Total</td>';
         html += '<td class="text-end">' + escapeHtml(fmtCantidad(sumarColumna(filasBase, IDX_CANTIDAD))) + '</td>';
         html += '<td class="text-end">' + escapeHtml(fmtImporte(sumarColumna(filasBase, IDX_IMPORTE))) + '</td>';
         html += '<td class="text-end">' + escapeHtml(fmtImporte(sumarColumna(filasBase, IDX_COMPRA_EQ))) + '</td>';
@@ -272,11 +331,87 @@ document.addEventListener('DOMContentLoaded', async function () {
         document.getElementById('lblRowCount').textContent = String(rows.length);
     }
 
+    function htmlDetalle(id) {
+        const det = detalles.get(id);
+        if (!det || det.cargando) {
+            return '<div class="text-muted small py-1"><span class="spinner-border spinner-border-sm me-2" role="status"></span>Cargando ventas...</div>';
+        }
+        if (det.error) {
+            return '<div class="text-danger small py-1">' + escapeHtml(det.error) + '</div>';
+        }
+        if (!det.data.length) {
+            return '<div class="text-muted small py-1">Sin ventas en el periodo.</div>';
+        }
+        let html = '<table class="table table-bordered table-sm tabla-detalle-item">'
+            + '<thead><tr><th>RUC</th><th>Cliente</th><th>Fecha</th><th class="text-end">Cantidad</th>'
+            + '<th class="text-end">P. Unit</th><th class="text-end">Total</th></tr></thead><tbody>';
+        let cantidad = 0;
+        let total = 0;
+        det.data.forEach(function (r) {
+            cantidad += Number(r[3]) || 0;
+            total += Number(r[5]) || 0;
+            html += '<tr>'
+                + '<td>' + escapeHtml(r[0]) + '</td>'
+                + '<td>' + escapeHtml(r[1]) + '</td>'
+                + '<td>' + escapeHtml(r[2]) + '</td>'
+                + '<td class="text-end">' + escapeHtml(fmtCantidad(r[3])) + '</td>'
+                + '<td class="text-end">' + escapeHtml(fmtImporte(r[4])) + '</td>'
+                + '<td class="text-end">' + escapeHtml(fmtImporte(r[5])) + '</td>'
+                + '</tr>';
+        });
+        html += '</tbody><tfoot><tr><td colspan="3" class="text-end">Total</td>'
+            + '<td class="text-end">' + escapeHtml(fmtCantidad(cantidad)) + '</td><td></td>'
+            + '<td class="text-end">' + escapeHtml(fmtImporte(total)) + '</td></tr></tfoot></table>';
+        return html;
+    }
+
+    async function cargarDetalle(id) {
+        detalles.set(id, { cargando: true });
+        try {
+            const res = await fetch(URL_DETALLE, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    id_item: id,
+                    fecha_desde: periodoConsultado.desde,
+                    fecha_hasta: periodoConsultado.hasta,
+                    cliente: periodoConsultado.cliente
+                })
+            });
+            const payload = await res.json();
+            if (!res.ok || payload.error) {
+                detalles.set(id, { error: payload.error || 'No se pudo cargar el detalle.' });
+            } else {
+                detalles.set(id, { data: payload.data || [] });
+            }
+        } catch (e) {
+            console.error(e);
+            detalles.set(id, { error: 'Error de red o del servidor.' });
+        }
+        if (abiertos.has(id)) pintarTabla();
+    }
+
+    document.getElementById('tbody-reporte').addEventListener('click', function (e) {
+        const fila = e.target.closest('tr.fila-item');
+        if (!fila) return;
+        const id = fila.getAttribute('data-id');
+        if (abiertos.has(id)) {
+            abiertos.delete(id);
+        } else {
+            abiertos.add(id);
+            const det = detalles.get(id);
+            if (!det || det.error) cargarDetalle(id);
+        }
+        pintarTabla();
+    });
+
     function renderizarTabla(payload) {
         cabeceras = payload.headers || [];
         filasBase = (payload.data || []).map(function (row) { return (row || []).slice(); });
         sortCol = IDX_CANTIDAD;
         sortDesc = true;
+        abiertos.clear();
+        detalles.clear();
         pintarTabla();
     }
 
@@ -311,6 +446,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                 alert(payload.error || 'Error al consultar el reporte.');
                 return;
             }
+            periodoConsultado = { desde: fechaDesde, hasta: fechaHasta, cliente: cliente };
             document.getElementById('cardResultado').classList.remove('d-none');
             renderizarTabla(payload);
         } catch (e) {
