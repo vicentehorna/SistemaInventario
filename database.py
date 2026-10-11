@@ -4477,6 +4477,7 @@ def get_reporte_clientes(fecha_desde, fecha_hasta, cliente=''):
         cursor.execute(
             """
             SELECT
+                e.IdEmpresa AS IdCliente,
                 e.RUC AS Ruc,
                 e.RazonSocial AS RazonSocial,
                 SUM(v.Total) AS ImporteTotal,
@@ -4505,6 +4506,62 @@ def get_reporte_clientes(fecha_desde, fecha_hasta, cliente=''):
         return rows
     except Exception as e:
         _logger_db.exception("get_reporte_clientes: %s", e)
+        raise
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def get_reporte_clientes_detalle(id_cliente, fecha_desde, fecha_hasta):
+    """Ítems vendidos a un cliente en el rango de fechas (ventas no anuladas), de la más reciente a la más antigua."""
+    try:
+        id_cliente_i = int(id_cliente)
+    except (TypeError, ValueError):
+        raise ValueError('Cliente no válido.')
+
+    desde = _fecha_filtro_reporte(fecha_desde, 'Fecha desde')
+    hasta = _fecha_filtro_reporte(fecha_hasta, 'Fecha hasta')
+    if desde > hasta:
+        raise ValueError('La fecha desde no puede ser mayor que la fecha hasta.')
+    desde_dt = datetime(desde.year, desde.month, desde.day)
+    hasta_exc = datetime(hasta.year, hasta.month, hasta.day) + timedelta(days=1)
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT
+                i.Codigo AS Codigo,
+                i.Descripcion AS Descripcion,
+                d.Cantidad AS Cantidad,
+                d.PrecioUnitario AS PrecioUnitario,
+                d.TotalLinea AS TotalLinea,
+                v.FechaVenta AS FechaVenta
+            FROM dbo.Inventario_VentasDet d
+            INNER JOIN dbo.Inventario_VentasCab v ON v.IdVenta = d.IdVenta
+            INNER JOIN dbo.Inventario_Items i ON i.IdItem = d.IdItem
+            WHERE v.IdCliente = ?
+              AND UPPER(LTRIM(RTRIM(ISNULL(v.EstadoVenta, '')))) NOT IN ('ANULADA', 'ANULADO')
+              AND v.FechaVenta >= ?
+              AND v.FechaVenta < ?
+            ORDER BY v.FechaVenta DESC, v.IdVenta DESC, d.IdVentaDet
+            """,
+            (id_cliente_i, desde_dt, hasta_exc),
+        )
+        columns = [col[0] for col in cursor.description]
+        rows = []
+        for row in cursor.fetchall():
+            fila = {col: val for col, val in zip(columns, row)}
+            rows.append({k.lower(): v for k, v in fila.items()})
+        cursor.close()
+        return rows
+    except Exception as e:
+        _logger_db.exception("get_reporte_clientes_detalle: %s", e)
         raise
     finally:
         if conn:

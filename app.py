@@ -96,6 +96,7 @@ from database import (
     get_reporte_ventas_por_periodo,
     get_reporte_compras_por_periodo,
     get_reporte_clientes,
+    get_reporte_clientes_detalle,
     anular_venta,
     get_venta_por_id,
     actualizar_venta,
@@ -2407,12 +2408,47 @@ def reporte_clientes_post():
                 _jsonable_value(r.get('razonsocial')),
                 round(importe, 2),
                 _jsonable_value(r.get('fechaultimaventa')),
+                r.get('idcliente'),
             ])
         return jsonify({'headers': headers_es, 'data': data})
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
     except Exception as e:
         logging.exception('reporte_clientes_post')
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/reportes/clientes/detalle', methods=['POST'])
+@login_required
+def reporte_clientes_detalle_post():
+    """JSON con los ítems vendidos a un cliente en el periodo."""
+    ensure_user_session()
+    body = request.get_json(silent=True) or {}
+    try:
+        rows = get_reporte_clientes_detalle(
+            body.get('id_cliente'),
+            str(body.get('fecha_desde') or '').strip(),
+            str(body.get('fecha_hasta') or '').strip(),
+        )
+        data = []
+        for r in rows:
+            try:
+                cantidad = int(r.get('cantidad') or 0)
+            except (TypeError, ValueError):
+                cantidad = 0
+            data.append([
+                _jsonable_value(r.get('codigo')),
+                _jsonable_value(r.get('descripcion')),
+                cantidad,
+                round(float(r.get('preciounitario') or 0), 2),
+                round(float(r.get('totallinea') or 0), 2),
+                _jsonable_value(r.get('fechaventa')),
+            ])
+        return jsonify({'data': data})
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        logging.exception('reporte_clientes_detalle_post')
         return jsonify({'error': str(e)}), 500
 
 

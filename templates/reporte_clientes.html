@@ -67,6 +67,50 @@
         font-weight: 700;
         border-top: 2px solid #dee2e6;
     }
+
+    .table-reporte-clientes th.col-toggle,
+    .table-reporte-clientes td.col-toggle {
+        width: 34px;
+        text-align: center;
+    }
+
+    .table-reporte-clientes tr.fila-cliente {
+        cursor: pointer;
+    }
+
+    .table-reporte-clientes tr.fila-cliente.abierta td {
+        background-color: #eef4ff;
+        font-weight: 600;
+    }
+
+    .table-reporte-clientes .icono-toggle {
+        font-size: 1rem;
+        color: #0d6efd;
+        line-height: 1;
+    }
+
+    .table-reporte-clientes tr.fila-detalle > td {
+        background-color: #fafbfc;
+        padding: 0.5rem 0.75rem 0.75rem 2.5rem;
+    }
+
+    .tabla-detalle-cliente {
+        font-size: 11.5px;
+        margin-bottom: 0;
+        background-color: #fff;
+    }
+
+    .tabla-detalle-cliente thead th {
+        position: static;
+        background-color: #f1f3f5;
+        box-shadow: none;
+        font-weight: 700;
+    }
+
+    .tabla-detalle-cliente tfoot td {
+        font-weight: 700;
+        background-color: #f8f9fa;
+    }
 </style>
 {% endblock %}
 
@@ -74,7 +118,7 @@
 <div class="card shadow-sm border-0 mb-4">
     <div class="card-header bg-white border-bottom-0 pt-4 pb-0">
         <h5 class="mb-0 fw-bold text-secondary"><i class="bi bi-people"></i> Reporte de Clientes</h5>
-        <p class="text-muted small mb-0 mt-2">Importe vendido a cada cliente en el periodo. Haga clic en el título de una columna para ordenar.</p>
+        <p class="text-muted small mb-0 mt-2">Importe vendido a cada cliente en el periodo. Haga clic en el título de una columna para ordenar y en un cliente para ver sus compras.</p>
     </div>
     <div class="card-body">
         <form id="frmReporteClientes" class="row g-2 g-lg-2 align-items-end">
@@ -115,13 +159,18 @@
 <script>
 document.addEventListener('DOMContentLoaded', async function () {
     const URL_REPORTE = {{ url_for('reporte_clientes_post') | tojson }};
+    const URL_DETALLE = {{ url_for('reporte_clientes_detalle_post') | tojson }};
     const IDX_ORDEN = 0;
     const IDX_IMPORTE = 3;
     const IDX_FECHA = 4;
+    const IDX_ID = 5;
     let cabeceras = [];
     let filasBase = [];
     let sortCol = IDX_IMPORTE;
     let sortDesc = true;
+    let periodoConsultado = { desde: '', hasta: '' };
+    const abiertos = new Set();
+    const detalles = new Map();
 
     function escapeHtml(s) {
         return String(s || '')
@@ -188,7 +237,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         const tbody = document.getElementById('tbody-reporte');
         const rows = filasOrdenadas();
 
-        thead.innerHTML = '<tr>' + cabeceras.map(function (h, idx) {
+        thead.innerHTML = '<tr><th class="col-toggle" aria-label="Detalle"></th>' + cabeceras.map(function (h, idx) {
             const align = esNumerico(idx) ? ' text-end' : '';
             const marca = idx === sortCol
                 ? '<span class="marca-orden" aria-hidden="true">' + (sortDesc ? '&#9660;' : '&#9650;') + '</span>'
@@ -212,26 +261,36 @@ document.addEventListener('DOMContentLoaded', async function () {
             });
         });
 
+        const totalColumnas = cabeceras.length + 1;
         if (!rows.length) {
-            tbody.innerHTML = '<tr><td colspan="' + cabeceras.length + '" class="text-center text-muted py-3">No hay ventas a clientes en el periodo seleccionado.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="' + totalColumnas + '" class="text-center text-muted py-3">No hay ventas a clientes en el periodo seleccionado.</td></tr>';
             document.getElementById('lblRowCount').textContent = '0';
             return;
         }
 
         let html = '';
         rows.forEach(function (row) {
-            html += '<tr>';
-            (row || []).forEach(function (val, idx) {
+            const id = String(row[IDX_ID]);
+            const abierto = abiertos.has(id);
+            html += '<tr class="fila-cliente' + (abierto ? ' abierta' : '') + '" data-id="' + escapeHtml(id) + '"'
+                + ' title="' + (abierto ? 'Ocultar compras' : 'Ver compras') + '">';
+            html += '<td class="col-toggle"><i class="bi ' + (abierto ? 'bi-dash-circle' : 'bi-plus-circle')
+                + ' icono-toggle" aria-hidden="true"></i></td>';
+            cabeceras.forEach(function (_, idx) {
+                const val = row[idx];
                 const align = esNumerico(idx) ? 'text-end' : '';
                 let texto = val === null || val === undefined ? '' : String(val);
                 if (idx === IDX_IMPORTE) texto = fmtImporte(val);
                 html += '<td class="' + align + '">' + escapeHtml(texto) + '</td>';
             });
             html += '</tr>';
+            if (abierto) {
+                html += '<tr class="fila-detalle"><td colspan="' + totalColumnas + '">' + htmlDetalle(id) + '</td></tr>';
+            }
         });
 
         html += '<tr class="fila-totales">';
-        html += '<td colspan="3" class="text-end">Total</td>';
+        html += '<td colspan="4" class="text-end">Total</td>';
         html += '<td class="text-end">' + escapeHtml(fmtImporte(sumarColumna(filasBase, IDX_IMPORTE))) + '</td>';
         html += '<td></td>';
         html += '</tr>';
@@ -239,11 +298,86 @@ document.addEventListener('DOMContentLoaded', async function () {
         document.getElementById('lblRowCount').textContent = String(rows.length);
     }
 
+    function htmlDetalle(id) {
+        const det = detalles.get(id);
+        if (!det || det.cargando) {
+            return '<div class="text-muted small py-1"><span class="spinner-border spinner-border-sm me-2" role="status"></span>Cargando compras...</div>';
+        }
+        if (det.error) {
+            return '<div class="text-danger small py-1">' + escapeHtml(det.error) + '</div>';
+        }
+        if (!det.data.length) {
+            return '<div class="text-muted small py-1">Sin compras en el periodo.</div>';
+        }
+        let html = '<table class="table table-bordered table-sm tabla-detalle-cliente">'
+            + '<thead><tr><th>Código</th><th>Descripción</th><th class="text-end">Cantidad</th>'
+            + '<th class="text-end">P. Unit</th><th class="text-end">Total</th><th>Fecha</th></tr></thead><tbody>';
+        let cantidad = 0;
+        let total = 0;
+        det.data.forEach(function (r) {
+            cantidad += Number(r[2]) || 0;
+            total += Number(r[4]) || 0;
+            html += '<tr>'
+                + '<td>' + escapeHtml(r[0]) + '</td>'
+                + '<td>' + escapeHtml(r[1]) + '</td>'
+                + '<td class="text-end">' + escapeHtml(String(r[2])) + '</td>'
+                + '<td class="text-end">' + escapeHtml(fmtImporte(r[3])) + '</td>'
+                + '<td class="text-end">' + escapeHtml(fmtImporte(r[4])) + '</td>'
+                + '<td>' + escapeHtml(r[5]) + '</td>'
+                + '</tr>';
+        });
+        html += '</tbody><tfoot><tr><td colspan="2" class="text-end">Total</td>'
+            + '<td class="text-end">' + escapeHtml(String(cantidad)) + '</td><td></td>'
+            + '<td class="text-end">' + escapeHtml(fmtImporte(total)) + '</td><td></td></tr></tfoot></table>';
+        return html;
+    }
+
+    async function cargarDetalle(id) {
+        detalles.set(id, { cargando: true });
+        try {
+            const res = await fetch(URL_DETALLE, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    id_cliente: id,
+                    fecha_desde: periodoConsultado.desde,
+                    fecha_hasta: periodoConsultado.hasta
+                })
+            });
+            const payload = await res.json();
+            if (!res.ok || payload.error) {
+                detalles.set(id, { error: payload.error || 'No se pudo cargar el detalle.' });
+            } else {
+                detalles.set(id, { data: payload.data || [] });
+            }
+        } catch (e) {
+            console.error(e);
+            detalles.set(id, { error: 'Error de red o del servidor.' });
+        }
+        if (abiertos.has(id)) pintarTabla();
+    }
+
+    document.getElementById('tbody-reporte').addEventListener('click', function (e) {
+        const fila = e.target.closest('tr.fila-cliente');
+        if (!fila) return;
+        const id = fila.getAttribute('data-id');
+        if (abiertos.has(id)) {
+            abiertos.delete(id);
+        } else {
+            abiertos.add(id);
+            const det = detalles.get(id);
+            if (!det || det.error) cargarDetalle(id);
+        }
+        pintarTabla();
+    });
+
     function renderizarTabla(payload) {
         cabeceras = payload.headers || [];
         filasBase = (payload.data || []).map(function (row) { return (row || []).slice(); });
         sortCol = IDX_IMPORTE;
         sortDesc = true;
+        abiertos.clear();
+        detalles.clear();
         pintarTabla();
     }
 
@@ -276,6 +410,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                 alert(payload.error || 'Error al consultar el reporte.');
                 return;
             }
+            periodoConsultado = { desde: fechaDesde, hasta: fechaHasta };
             document.getElementById('cardResultado').classList.remove('d-none');
             renderizarTabla(payload);
         } catch (e) {
