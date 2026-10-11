@@ -132,8 +132,9 @@ document.addEventListener('DOMContentLoaded', async function () {
     const IDX_FECHA = 3;
     const IDX_CANTIDAD = 4;
     const IDX_IMPORTE = 5;
-    const IDX_UTILIDAD = 6;
-    const IDX_STOCK = 7;
+    const IDX_COMPRA_EQ = 6;
+    const IDX_UTILIDAD = 7;
+    const IDX_STOCK = 8;
     let cabeceras = [];
     let filasBase = [];
     let sortCol = IDX_CANTIDAD;
@@ -168,7 +169,8 @@ document.addEventListener('DOMContentLoaded', async function () {
     }
 
     function esNumerico(idx) {
-        return idx === IDX_ORDEN || idx === IDX_CANTIDAD || idx === IDX_IMPORTE || idx === IDX_UTILIDAD || idx === IDX_STOCK;
+        return idx === IDX_ORDEN || idx === IDX_CANTIDAD || idx === IDX_IMPORTE || idx === IDX_COMPRA_EQ
+            || idx === IDX_UTILIDAD || idx === IDX_STOCK;
     }
 
     function fechaANumero(valor) {
@@ -228,7 +230,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                     sortDesc = !sortDesc;
                 } else {
                     sortCol = idx;
-                    sortDesc = idx === IDX_CANTIDAD || idx === IDX_IMPORTE || idx === IDX_UTILIDAD || idx === IDX_STOCK;
+                    sortDesc = esNumerico(idx) && idx !== IDX_ORDEN;
                 }
                 pintarTabla();
             });
@@ -247,10 +249,11 @@ document.addEventListener('DOMContentLoaded', async function () {
                 let clases = esNumerico(idx) ? 'text-end' : '';
                 let texto = val === null || val === undefined ? '' : String(val);
                 if (idx === IDX_CANTIDAD || idx === IDX_STOCK || idx === IDX_ORDEN) texto = fmtCantidad(val);
-                if (idx === IDX_IMPORTE || idx === IDX_UTILIDAD) texto = fmtImporte(val);
+                if (idx === IDX_IMPORTE || idx === IDX_COMPRA_EQ || idx === IDX_UTILIDAD) texto = fmtImporte(val);
                 if (idx === IDX_UTILIDAD && Number(val) < 0) clases += ' text-danger';
+                const sinCompras = (idx === IDX_COMPRA_EQ || idx === IDX_UTILIDAD) && (val === null || val === undefined);
                 html += '<td class="' + clases + '"'
-                    + (idx === IDX_UTILIDAD && (val === null || val === undefined) ? ' title="Ítem sin compras registradas"' : '')
+                    + (sinCompras ? ' title="Ítem sin compras registradas"' : '')
                     + '>' + escapeHtml(texto) + '</td>';
             });
             html += '</tr>';
@@ -260,6 +263,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         html += '<td colspan="4" class="text-end">Total</td>';
         html += '<td class="text-end">' + escapeHtml(fmtCantidad(sumarColumna(filasBase, IDX_CANTIDAD))) + '</td>';
         html += '<td class="text-end">' + escapeHtml(fmtImporte(sumarColumna(filasBase, IDX_IMPORTE))) + '</td>';
+        html += '<td class="text-end">' + escapeHtml(fmtImporte(sumarColumna(filasBase, IDX_COMPRA_EQ))) + '</td>';
         const totalUtilidad = sumarColumna(filasBase, IDX_UTILIDAD);
         html += '<td class="text-end' + (totalUtilidad < 0 ? ' text-danger' : '') + '">' + escapeHtml(fmtImporte(totalUtilidad)) + '</td>';
         html += '<td></td>';

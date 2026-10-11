@@ -4297,8 +4297,8 @@ def get_reporte_ventas_por_periodo(fecha_desde, fecha_hasta, cliente=0, item='')
     """
     Ítems vendidos en un rango de fechas, agrupados y ordenados por cantidad descendente.
     Excluye ventas anuladas. cliente=0 incluye todos los clientes.
-    Utilidad = importe vendido - cantidad × costo promedio ponderado de las compras no anuladas;
-    queda NULL si el ítem no tiene compras.
+    CompraEquivalente = cantidad × costo promedio ponderado de las compras no anuladas;
+    Utilidad = importe vendido - CompraEquivalente. Ambas quedan NULL si el ítem no tiene compras.
     item filtra por código o descripción, coincidencia parcial.
     """
     try:
@@ -4327,6 +4327,7 @@ def get_reporte_ventas_por_periodo(fecha_desde, fecha_hasta, cliente=0, item='')
                 MAX(v.FechaVenta) AS FechaUltimaVenta,
                 SUM(d.Cantidad) AS Cantidad,
                 SUM(d.TotalLinea) AS ImporteTotal,
+                SUM(d.Cantidad) * pc.CostoPromedio AS CompraEquivalente,
                 SUM(d.TotalLinea) - SUM(d.Cantidad) * pc.CostoPromedio AS Utilidad,
                 i.StockActual AS StockActual
             FROM dbo.Inventario_VentasDet d

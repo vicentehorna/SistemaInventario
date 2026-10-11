@@ -2234,6 +2234,7 @@ def reporte_ventas_periodo_post():
         'Fecha Última Venta',
         'Cantidad',
         'Importe total',
+        'Compra Equivalente',
         'Utilidad',
         'Stock Actual',
     ]
@@ -2245,6 +2246,8 @@ def reporte_ventas_periodo_post():
             cantidad = r.get('cantidad')
             stock = r.get('stockactual')
             importe = r.get('importetotal')
+            compra_eq = r.get('compraequivalente')
+            compra_eq = None if compra_eq is None else round(float(compra_eq), 2)
             utilidad = r.get('utilidad')
             utilidad = None if utilidad is None else round(float(utilidad), 2)
             try:
@@ -2269,6 +2272,7 @@ def reporte_ventas_periodo_post():
                 _jsonable_value(r.get('fechaultimaventa')),
                 cantidad,
                 round(importe, 2),
+                compra_eq,
                 utilidad,
                 stock,
             ])
