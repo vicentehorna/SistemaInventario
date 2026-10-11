@@ -92,7 +92,7 @@ from database import (
     get_clientes_activos,
     get_articulos_para_venta,
     insertar_venta,
-    get_lista_ventas_inventario,
+    get_lista_ventas_cabecera,
     get_reporte_ventas_por_periodo,
     get_reporte_ventas_por_periodo_detalle,
     get_reporte_compras_por_periodo,
@@ -2147,7 +2147,7 @@ def lista_ventas_page():
 @app.route('/operaciones/ventas/listado', methods=['POST'])
 @login_required
 def lista_ventas_post():
-    """JSON de ventas usando sp_inv_lista_ventas."""
+    """JSON de ventas: una fila por venta con los datos de cabecera."""
     ensure_user_session()
     body = request.get_json(silent=True) or {}
     codigo = str(body.get('codigo') or '').strip()
@@ -2164,45 +2164,64 @@ def lista_ventas_post():
         'Cliente',
         'Fecha venta',
         'Fecha Vcto',
+        'Comprobante',
         'Estado pago',
-        'Código',
-        'Artículo',
-        'Precio unitario',
-        'Cantidad',
-        'Total línea',
+        'Total',
     ]
 
     try:
-        rows = get_lista_ventas_inventario(codigo, articulo, cliente, estado_pago)
+        rows = get_lista_ventas_cabecera(codigo, articulo, cliente, estado_pago)
         data = []
         ids = []
         for r in rows:
-            estado_venta = str(r.get('estadoventa') or '').strip().upper()
-            if estado_venta in ('ANULADA', 'ANULADO'):
-                continue
-
-            id_venta = r.get('idventa')
-            try:
-                ids.append(int(id_venta))
-            except (TypeError, ValueError):
-                ids.append(None)
-
-            fila = [
+            ids.append(r.get('idventa'))
+            data.append([
                 _jsonable_value(r.get('razonsocial')),
                 _jsonable_value(r.get('fechaventa')),
                 _jsonable_value(r.get('fechavencimiento')),
+                _comprobante_txt(r.get('tipocomprobante'), r.get('nrocomprobanteref')),
                 _jsonable_value(r.get('estadopago')),
-                _jsonable_value(r.get('codigo')),
-                _jsonable_value(r.get('descripcion')),
-                _jsonable_value(r.get('preciounitario')),
-                _jsonable_value(r.get('cantidad')),
-                _jsonable_value(r.get('totallinea')),
-            ]
-            data.append(fila)
+                round(float(r.get('total') or 0), 2),
+            ])
         return jsonify({'headers': headers_es, 'data': data, 'ids': ids})
     except Exception as e:
         logging.exception('lista_ventas_post')
         return jsonify({'error': str(e)}), 500
+
+
+_TIPOS_COMPROBANTE_TXT = {
+    'FACTURA': 'Factura',
+    'BOLETA': 'Boleta',
+    'NOTA_VENTA': 'Nota de venta',
+    'NINGUNO': 'Sin comprobante',
+}
+
+
+def _comprobante_txt(tipo, numero):
+    tipo_txt = _TIPOS_COMPROBANTE_TXT.get(str(tipo or '').strip().upper(), str(tipo or '').strip())
+    numero_txt = str(numero or '').strip()
+    return f'{tipo_txt} {numero_txt}'.strip()
+
+
+@app.route('/operaciones/ventas/detalle', methods=['POST'])
+@login_required
+def lista_ventas_detalle_post():
+    """JSON con las líneas de una venta para el detalle desplegable del listado."""
+    ensure_user_session()
+    body = request.get_json(silent=True) or {}
+    venta = get_venta_por_id(body.get('id_venta'))
+    if not venta:
+        return jsonify({'error': 'Venta no encontrada.'}), 404
+    data = []
+    for d in venta.get('detalles') or []:
+        data.append([
+            _jsonable_value(d.get('codigo')),
+            _jsonable_value(d.get('descripcion')),
+            round(float(d.get('preciounitario') or 0), 2),
+            int(d.get('cantidad') or 0),
+            round(float(d.get('totallinea') or 0), 2),
+        ])
+    return jsonify({'data': data})
 
 
 @app.route('/reportes/ventas-por-periodo', methods=['GET'])

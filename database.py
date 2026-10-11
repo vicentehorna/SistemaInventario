@@ -4234,11 +4234,14 @@ def actualizar_venta(
                 pass
 
 
-def get_lista_ventas_inventario(codigo='', articulo='', cliente=0, estado_pago=''):
-    """Ejecuta sp_inv_lista_ventas con filtros."""
+def get_lista_ventas_cabecera(codigo='', articulo='', cliente=0, estado_pago=''):
+    """
+    Una fila por venta no anulada (datos de cabecera).
+    codigo y articulo filtran las ventas que contienen algún ítem con ese código o descripción.
+    """
     conn = None
-    codigo_s = (codigo or '').strip()
-    articulo_s = (articulo or '').strip()
+    patron_codigo = _patron_busqueda_item(codigo)
+    patron_articulo = _patron_busqueda_item(articulo)
     estado_pago_s = (estado_pago or '').strip().upper()
     if estado_pago_s not in ('', 'PENDIENTE', 'CANCELADO'):
         estado_pago_s = ''
@@ -4250,8 +4253,41 @@ def get_lista_ventas_inventario(codigo='', articulo='', cliente=0, estado_pago='
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute(
-            "EXEC sp_inv_lista_ventas @codigo=?, @articulo=?, @cliente=?, @estadopago=?",
-            (codigo_s, articulo_s, cliente_i, estado_pago_s),
+            """
+            SELECT
+                v.IdVenta,
+                e.RazonSocial,
+                v.FechaVenta,
+                v.FechaVencimiento,
+                v.TipoComprobante,
+                v.NroComprobanteRef,
+                v.EstadoPago,
+                v.Total
+            FROM dbo.Inventario_VentasCab v
+            INNER JOIN dbo.Inventario_Empresas e ON e.IdEmpresa = v.IdCliente AND e.EsCliente = 1
+            WHERE UPPER(LTRIM(RTRIM(ISNULL(v.EstadoVenta, '')))) NOT IN ('ANULADA', 'ANULADO')
+              AND (? = 0 OR v.IdCliente = ?)
+              AND (? = '' OR v.EstadoPago = ?)
+              AND (
+                    (? = N'' AND ? = N'')
+                    OR EXISTS (
+                        SELECT 1
+                        FROM dbo.Inventario_VentasDet d
+                        INNER JOIN dbo.Inventario_Items i ON i.IdItem = d.IdItem
+                        WHERE d.IdVenta = v.IdVenta
+                          AND (? = N'' OR i.Codigo LIKE ?)
+                          AND (? = N'' OR i.Descripcion LIKE ?)
+                    )
+                  )
+            ORDER BY v.FechaVenta, v.IdVenta
+            """,
+            (
+                cliente_i, cliente_i,
+                estado_pago_s, estado_pago_s,
+                patron_codigo, patron_articulo,
+                patron_codigo, patron_codigo,
+                patron_articulo, patron_articulo,
+            ),
         )
         columns = [col[0] for col in cursor.description]
         rows = []
@@ -4261,7 +4297,7 @@ def get_lista_ventas_inventario(codigo='', articulo='', cliente=0, estado_pago='
         cursor.close()
         return rows
     except Exception as e:
-        _logger_db.exception("get_lista_ventas_inventario: %s", e)
+        _logger_db.exception("get_lista_ventas_cabecera: %s", e)
         raise
     finally:
         if conn:
