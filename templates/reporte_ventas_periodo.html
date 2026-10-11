@@ -132,7 +132,8 @@ document.addEventListener('DOMContentLoaded', async function () {
     const IDX_FECHA = 3;
     const IDX_CANTIDAD = 4;
     const IDX_IMPORTE = 5;
-    const IDX_STOCK = 6;
+    const IDX_UTILIDAD = 6;
+    const IDX_STOCK = 7;
     let cabeceras = [];
     let filasBase = [];
     let sortCol = IDX_CANTIDAD;
@@ -167,7 +168,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     }
 
     function esNumerico(idx) {
-        return idx === IDX_ORDEN || idx === IDX_CANTIDAD || idx === IDX_IMPORTE || idx === IDX_STOCK;
+        return idx === IDX_ORDEN || idx === IDX_CANTIDAD || idx === IDX_IMPORTE || idx === IDX_UTILIDAD || idx === IDX_STOCK;
     }
 
     function fechaANumero(valor) {
@@ -180,7 +181,7 @@ document.addEventListener('DOMContentLoaded', async function () {
 
     function compararValor(a, b, idx) {
         if (idx === IDX_FECHA) return fechaANumero(a) - fechaANumero(b);
-        if (idx === IDX_CANTIDAD || idx === IDX_IMPORTE || idx === IDX_STOCK || idx === IDX_ORDEN) {
+        if (esNumerico(idx)) {
             const na = Number(a);
             const nb = Number(b);
             return (Number.isFinite(na) ? na : 0) - (Number.isFinite(nb) ? nb : 0);
@@ -227,7 +228,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                     sortDesc = !sortDesc;
                 } else {
                     sortCol = idx;
-                    sortDesc = idx === IDX_CANTIDAD || idx === IDX_IMPORTE || idx === IDX_STOCK;
+                    sortDesc = idx === IDX_CANTIDAD || idx === IDX_IMPORTE || idx === IDX_UTILIDAD || idx === IDX_STOCK;
                 }
                 pintarTabla();
             });
@@ -243,11 +244,14 @@ document.addEventListener('DOMContentLoaded', async function () {
         rows.forEach(function (row, index) {
             html += '<tr' + (index === 0 ? ' class="fila-mas-vendido"' : '') + '>';
             (row || []).forEach(function (val, idx) {
-                const align = esNumerico(idx) ? 'text-end' : '';
+                let clases = esNumerico(idx) ? 'text-end' : '';
                 let texto = val === null || val === undefined ? '' : String(val);
                 if (idx === IDX_CANTIDAD || idx === IDX_STOCK || idx === IDX_ORDEN) texto = fmtCantidad(val);
-                if (idx === IDX_IMPORTE) texto = fmtImporte(val);
-                html += '<td class="' + align + '">' + escapeHtml(texto) + '</td>';
+                if (idx === IDX_IMPORTE || idx === IDX_UTILIDAD) texto = fmtImporte(val);
+                if (idx === IDX_UTILIDAD && Number(val) < 0) clases += ' text-danger';
+                html += '<td class="' + clases + '"'
+                    + (idx === IDX_UTILIDAD && (val === null || val === undefined) ? ' title="Ítem sin compras registradas"' : '')
+                    + '>' + escapeHtml(texto) + '</td>';
             });
             html += '</tr>';
         });
@@ -256,6 +260,8 @@ document.addEventListener('DOMContentLoaded', async function () {
         html += '<td colspan="4" class="text-end">Total</td>';
         html += '<td class="text-end">' + escapeHtml(fmtCantidad(sumarColumna(filasBase, IDX_CANTIDAD))) + '</td>';
         html += '<td class="text-end">' + escapeHtml(fmtImporte(sumarColumna(filasBase, IDX_IMPORTE))) + '</td>';
+        const totalUtilidad = sumarColumna(filasBase, IDX_UTILIDAD);
+        html += '<td class="text-end' + (totalUtilidad < 0 ? ' text-danger' : '') + '">' + escapeHtml(fmtImporte(totalUtilidad)) + '</td>';
         html += '<td></td>';
         html += '</tr>';
         tbody.innerHTML = html;

@@ -4297,6 +4297,8 @@ def get_reporte_ventas_por_periodo(fecha_desde, fecha_hasta, cliente=0, item='')
     """
     Ítems vendidos en un rango de fechas, agrupados y ordenados por cantidad descendente.
     Excluye ventas anuladas. cliente=0 incluye todos los clientes.
+    Utilidad = importe vendido - cantidad × costo promedio ponderado de las compras no anuladas;
+    queda NULL si el ítem no tiene compras.
     item filtra por código o descripción, coincidencia parcial.
     """
     try:
@@ -4325,10 +4327,18 @@ def get_reporte_ventas_por_periodo(fecha_desde, fecha_hasta, cliente=0, item='')
                 MAX(v.FechaVenta) AS FechaUltimaVenta,
                 SUM(d.Cantidad) AS Cantidad,
                 SUM(d.TotalLinea) AS ImporteTotal,
+                SUM(d.TotalLinea) - SUM(d.Cantidad) * pc.CostoPromedio AS Utilidad,
                 i.StockActual AS StockActual
             FROM dbo.Inventario_VentasDet d
             INNER JOIN dbo.Inventario_VentasCab v ON v.IdVenta = d.IdVenta
             INNER JOIN dbo.Inventario_Items i ON i.IdItem = d.IdItem
+            OUTER APPLY (
+                SELECT SUM(cd.TotalLinea) / NULLIF(SUM(cd.Cantidad), 0) AS CostoPromedio
+                FROM dbo.Inventario_ComprasDet cd
+                INNER JOIN dbo.Inventario_ComprasCab cc ON cc.IdCompra = cd.IdCompra
+                WHERE cd.IdItem = i.IdItem
+                  AND UPPER(LTRIM(RTRIM(ISNULL(cc.EstadoCompra, '')))) NOT IN ('ANULADA', 'ANULADO')
+            ) pc
             WHERE UPPER(LTRIM(RTRIM(ISNULL(v.EstadoVenta, '')))) NOT IN ('ANULADA', 'ANULADO')
               AND v.FechaVenta >= ?
               AND v.FechaVenta < ?
@@ -4338,7 +4348,7 @@ def get_reporte_ventas_por_periodo(fecha_desde, fecha_hasta, cliente=0, item='')
                     OR i.Codigo LIKE ?
                     OR i.Descripcion LIKE ?
                   )
-            GROUP BY i.IdItem, i.Codigo, i.Descripcion, i.StockActual
+            GROUP BY i.IdItem, i.Codigo, i.Descripcion, i.StockActual, pc.CostoPromedio
             ORDER BY SUM(d.Cantidad) DESC, i.Descripcion
             """,
             (

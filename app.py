@@ -2234,6 +2234,7 @@ def reporte_ventas_periodo_post():
         'Fecha Última Venta',
         'Cantidad',
         'Importe total',
+        'Utilidad',
         'Stock Actual',
     ]
 
@@ -2244,6 +2245,8 @@ def reporte_ventas_periodo_post():
             cantidad = r.get('cantidad')
             stock = r.get('stockactual')
             importe = r.get('importetotal')
+            utilidad = r.get('utilidad')
+            utilidad = None if utilidad is None else round(float(utilidad), 2)
             try:
                 cantidad = int(cantidad or 0)
             except (TypeError, ValueError):
@@ -2266,6 +2269,7 @@ def reporte_ventas_periodo_post():
                 _jsonable_value(r.get('fechaultimaventa')),
                 cantidad,
                 round(importe, 2),
+                utilidad,
                 stock,
             ])
         return jsonify({'headers': headers_es, 'data': data})
