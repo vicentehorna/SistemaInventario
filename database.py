@@ -3123,13 +3123,16 @@ def get_articulos_para_compra():
                 pass
 
 
-def get_lista_compras_inventario(codigo='', articulo='', proveedor=0, estado_pago=''):
-    """Ejecuta sp_inv_lista_compras con filtros."""
+def get_lista_compras_cabecera(codigo='', articulo='', proveedor=0, estado_pago=''):
+    """
+    Una fila por compra no anulada (datos de cabecera).
+    codigo y articulo filtran las compras que contienen algún ítem con ese código o descripción.
+    """
     conn = None
-    codigo_s = (codigo or '').strip()
-    articulo_s = (articulo or '').strip()
+    patron_codigo = _patron_busqueda_item(codigo)
+    patron_articulo = _patron_busqueda_item(articulo)
     estado_pago_s = (estado_pago or '').strip().upper()
-    if estado_pago_s and estado_pago_s not in ('PENDIENTE', 'CANCELADO'):
+    if estado_pago_s not in ('', 'PENDIENTE', 'CANCELADO'):
         estado_pago_s = ''
     try:
         proveedor_i = int(proveedor or 0)
@@ -3139,22 +3142,51 @@ def get_lista_compras_inventario(codigo='', articulo='', proveedor=0, estado_pag
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute(
-            "EXEC sp_inv_lista_compras @codigo=?, @articulo=?, @proveedor=?, @estadopago=?",
-            (codigo_s, articulo_s, proveedor_i, estado_pago_s),
+            """
+            SELECT
+                c.IdCompra,
+                e.RazonSocial,
+                c.FechaCompra,
+                c.FechaVencimiento,
+                c.TipoComprobante,
+                c.NroComprobanteRef,
+                c.EstadoPago,
+                c.Total
+            FROM dbo.Inventario_ComprasCab c
+            INNER JOIN dbo.Inventario_Empresas e ON e.IdEmpresa = c.IdProveedor AND e.EsProveedor = 1
+            WHERE UPPER(LTRIM(RTRIM(ISNULL(c.EstadoCompra, '')))) NOT IN ('ANULADA', 'ANULADO')
+              AND (? = 0 OR c.IdProveedor = ?)
+              AND (? = '' OR c.EstadoPago = ?)
+              AND (
+                    (? = N'' AND ? = N'')
+                    OR EXISTS (
+                        SELECT 1
+                        FROM dbo.Inventario_ComprasDet d
+                        INNER JOIN dbo.Inventario_Items i ON i.IdItem = d.IdItem
+                        WHERE d.IdCompra = c.IdCompra
+                          AND (? = N'' OR i.Codigo LIKE ?)
+                          AND (? = N'' OR i.Descripcion LIKE ?)
+                    )
+                  )
+            ORDER BY c.FechaCompra, c.IdCompra
+            """,
+            (
+                proveedor_i, proveedor_i,
+                estado_pago_s, estado_pago_s,
+                patron_codigo, patron_articulo,
+                patron_codigo, patron_codigo,
+                patron_articulo, patron_articulo,
+            ),
         )
         columns = [col[0] for col in cursor.description]
         rows = []
         for row in cursor.fetchall():
             item = {col: val for col, val in zip(columns, row)}
-            item = {k.lower(): v for k, v in item.items()}
-            estado = str(item.get('estadocompra') or '').strip().upper()
-            if estado in ('ANULADA', 'ANULADO'):
-                continue
-            rows.append(item)
+            rows.append({k.lower(): v for k, v in item.items()})
         cursor.close()
         return rows
     except Exception as e:
-        _logger_db.exception("get_lista_compras_inventario: %s", e)
+        _logger_db.exception("get_lista_compras_cabecera: %s", e)
         raise
     finally:
         if conn:

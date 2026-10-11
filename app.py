@@ -83,7 +83,7 @@ from database import (
     get_listado_empresas_inventario,
     get_proveedores_activos,
     get_articulos_para_compra,
-    get_lista_compras_inventario,
+    get_lista_compras_cabecera,
     insertar_compra,
     get_compra_por_id,
     actualizar_compra,
@@ -2848,7 +2848,7 @@ def lista_compras_page():
 @app.route('/operaciones/compras/listado', methods=['POST'])
 @login_required
 def lista_compras_post():
-    """JSON de compras usando sp_inv_lista_compras."""
+    """JSON de compras: una fila por compra con los datos de cabecera."""
     ensure_user_session()
     body = request.get_json(silent=True) or {}
     codigo = str(body.get('codigo') or '').strip()
@@ -2865,45 +2865,50 @@ def lista_compras_post():
         'Proveedor',
         'Fecha compra',
         'Fecha Vcto',
+        'Comprobante',
         'Estado pago',
-        'Código',
-        'Artículo',
-        'Precio unitario',
-        'Cantidad',
-        'Total línea',
+        'Total',
     ]
 
     try:
-        rows = get_lista_compras_inventario(codigo, articulo, proveedor, estado_pago)
+        rows = get_lista_compras_cabecera(codigo, articulo, proveedor, estado_pago)
         data = []
         ids = []
         for r in rows:
-            estado_compra = str(r.get('estadocompra') or '').strip().upper()
-            if estado_compra in ('ANULADA', 'ANULADO'):
-                continue
-
-            id_compra = r.get('idcompra')
-            try:
-                ids.append(int(id_compra))
-            except (TypeError, ValueError):
-                ids.append(None)
-
-            fila = [
+            ids.append(r.get('idcompra'))
+            data.append([
                 _jsonable_value(r.get('razonsocial')),
                 _jsonable_value(r.get('fechacompra')),
                 _jsonable_value(r.get('fechavencimiento')),
+                _comprobante_txt(r.get('tipocomprobante'), r.get('nrocomprobanteref')),
                 _jsonable_value(r.get('estadopago')),
-                _jsonable_value(r.get('codigo')),
-                _jsonable_value(r.get('descripcion')),
-                _jsonable_value(r.get('preciounitario')),
-                _jsonable_value(r.get('cantidad')),
-                _jsonable_value(r.get('totallinea')),
-            ]
-            data.append(fila)
+                round(float(r.get('total') or 0), 2),
+            ])
         return jsonify({'headers': headers_es, 'data': data, 'ids': ids})
     except Exception as e:
         logging.exception('lista_compras_post')
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/operaciones/compras/detalle', methods=['POST'])
+@login_required
+def lista_compras_detalle_post():
+    """JSON con las líneas de una compra para el detalle desplegable del listado."""
+    ensure_user_session()
+    body = request.get_json(silent=True) or {}
+    compra = get_compra_por_id(body.get('id_compra'))
+    if not compra:
+        return jsonify({'error': 'Compra no encontrada.'}), 404
+    data = []
+    for d in compra.get('detalles') or []:
+        data.append([
+            _jsonable_value(d.get('codigo')),
+            _jsonable_value(d.get('descripcion')),
+            round(float(d.get('preciounitario') or 0), 2),
+            int(d.get('cantidad') or 0),
+            round(float(d.get('totallinea') or 0), 2),
+        ])
+    return jsonify({'data': data})
 
 
 @app.route('/operaciones/compras/anular', methods=['POST'])
