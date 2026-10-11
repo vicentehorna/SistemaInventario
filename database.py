@@ -4472,6 +4472,7 @@ def get_reporte_compras_por_periodo(fecha_desde, fecha_hasta, proveedor=0, item=
         cursor.execute(
             """
             SELECT
+                i.IdItem AS IdItem,
                 i.Codigo AS Codigo,
                 i.Descripcion AS Descripcion,
                 MAX(c.FechaCompra) AS FechaUltimaCompra,
@@ -4512,6 +4513,70 @@ def get_reporte_compras_por_periodo(fecha_desde, fecha_hasta, proveedor=0, item=
         return rows
     except Exception as e:
         _logger_db.exception("get_reporte_compras_por_periodo: %s", e)
+        raise
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def get_reporte_compras_por_periodo_detalle(id_item, fecha_desde, fecha_hasta, proveedor=0):
+    """
+    Compras de un ítem en el rango de fechas (no anuladas), de la más reciente a la más antigua.
+    Aplica el mismo filtro de proveedor que el reporte para que los totales cuadren.
+    """
+    try:
+        id_item_i = int(id_item)
+    except (TypeError, ValueError):
+        raise ValueError('Ítem no válido.')
+    try:
+        proveedor_i = int(proveedor or 0)
+    except (TypeError, ValueError):
+        proveedor_i = 0
+
+    desde = _fecha_filtro_reporte(fecha_desde, 'Fecha desde')
+    hasta = _fecha_filtro_reporte(fecha_hasta, 'Fecha hasta')
+    if desde > hasta:
+        raise ValueError('La fecha desde no puede ser mayor que la fecha hasta.')
+    desde_dt = datetime(desde.year, desde.month, desde.day)
+    hasta_exc = datetime(hasta.year, hasta.month, hasta.day) + timedelta(days=1)
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT
+                e.RUC AS Ruc,
+                e.RazonSocial AS RazonSocial,
+                c.FechaCompra AS FechaCompra,
+                d.Cantidad AS Cantidad,
+                d.PrecioUnitario AS PrecioUnitario,
+                d.TotalLinea AS TotalLinea
+            FROM dbo.Inventario_ComprasDet d
+            INNER JOIN dbo.Inventario_ComprasCab c ON c.IdCompra = d.IdCompra
+            INNER JOIN dbo.Inventario_Empresas e ON e.IdEmpresa = c.IdProveedor
+            WHERE d.IdItem = ?
+              AND UPPER(LTRIM(RTRIM(ISNULL(c.EstadoCompra, '')))) NOT IN ('ANULADA', 'ANULADO')
+              AND c.FechaCompra >= ?
+              AND c.FechaCompra < ?
+              AND (? = 0 OR c.IdProveedor = ?)
+            ORDER BY c.FechaCompra DESC, c.IdCompra DESC, d.IdCompraDet
+            """,
+            (id_item_i, desde_dt, hasta_exc, proveedor_i, proveedor_i),
+        )
+        columns = [col[0] for col in cursor.description]
+        rows = []
+        for row in cursor.fetchall():
+            fila = {col: val for col, val in zip(columns, row)}
+            rows.append({k.lower(): v for k, v in fila.items()})
+        cursor.close()
+        return rows
+    except Exception as e:
+        _logger_db.exception("get_reporte_compras_por_periodo_detalle: %s", e)
         raise
     finally:
         if conn:
