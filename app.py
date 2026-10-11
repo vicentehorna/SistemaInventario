@@ -97,6 +97,8 @@ from database import (
     get_reporte_compras_por_periodo,
     get_reporte_clientes,
     get_reporte_clientes_detalle,
+    get_reporte_proveedores,
+    get_reporte_proveedores_detalle,
     anular_venta,
     get_venta_por_id,
     actualizar_venta,
@@ -2449,6 +2451,95 @@ def reporte_clientes_detalle_post():
         return jsonify({'error': str(e)}), 400
     except Exception as e:
         logging.exception('reporte_clientes_detalle_post')
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/reportes/proveedores', methods=['GET'])
+@login_required
+def reporte_proveedores_page():
+    """Reporte de proveedores con el importe comprado y la fecha de su última compra."""
+    ensure_user_session()
+    hoy = _fecha_hoy_app()
+    return render_template(
+        'reporte_proveedores.html',
+        fecha_desde=date(hoy.year, 1, 1).isoformat(),
+        fecha_hasta=hoy.isoformat(),
+    )
+
+
+@app.route('/reportes/proveedores/listado', methods=['POST'])
+@login_required
+def reporte_proveedores_post():
+    """JSON del Reporte de Proveedores."""
+    ensure_user_session()
+    body = request.get_json(silent=True) or {}
+    fecha_desde = str(body.get('fecha_desde') or '').strip()
+    fecha_hasta = str(body.get('fecha_hasta') or '').strip()
+    proveedor = str(body.get('proveedor') or '').strip()
+
+    headers_es = [
+        'Orden',
+        'RUC',
+        'Proveedor',
+        'Importe Total',
+        'Fecha Última Compra',
+    ]
+
+    try:
+        rows = get_reporte_proveedores(fecha_desde, fecha_hasta, proveedor)
+        data = []
+        for indice, r in enumerate(rows, start=1):
+            try:
+                importe = float(r.get('importetotal') or 0)
+            except (TypeError, ValueError):
+                importe = 0.0
+            data.append([
+                indice,
+                _jsonable_value(r.get('ruc')),
+                _jsonable_value(r.get('razonsocial')),
+                round(importe, 2),
+                _jsonable_value(r.get('fechaultimacompra')),
+                r.get('idproveedor'),
+            ])
+        return jsonify({'headers': headers_es, 'data': data})
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        logging.exception('reporte_proveedores_post')
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/reportes/proveedores/detalle', methods=['POST'])
+@login_required
+def reporte_proveedores_detalle_post():
+    """JSON con los ítems comprados a un proveedor en el periodo."""
+    ensure_user_session()
+    body = request.get_json(silent=True) or {}
+    try:
+        rows = get_reporte_proveedores_detalle(
+            body.get('id_proveedor'),
+            str(body.get('fecha_desde') or '').strip(),
+            str(body.get('fecha_hasta') or '').strip(),
+        )
+        data = []
+        for r in rows:
+            try:
+                cantidad = int(r.get('cantidad') or 0)
+            except (TypeError, ValueError):
+                cantidad = 0
+            data.append([
+                _jsonable_value(r.get('codigo')),
+                _jsonable_value(r.get('descripcion')),
+                cantidad,
+                round(float(r.get('preciounitario') or 0), 2),
+                round(float(r.get('totallinea') or 0), 2),
+                _jsonable_value(r.get('fechacompra')),
+            ])
+        return jsonify({'data': data})
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        logging.exception('reporte_proveedores_detalle_post')
         return jsonify({'error': str(e)}), 500
 
 

@@ -493,6 +493,13 @@
                         </a>
                     </li>
 
+                    <li class="{{ 'active' if request.endpoint == 'reporte_proveedores_page' else '' }}">
+                        <a href="{{ url_for('reporte_proveedores_page') }}" class="sidebar-link" title="Reporte de Proveedores">
+                            <i class="bi bi-truck sidebar-icon" aria-hidden="true"></i>
+                            <span class="sidebar-link-text">Reporte de Proveedores</span>
+                        </a>
+                    </li>
+
                     <hr class="mx-3 opacity-25 mt-3 mb-2">
 
                     <li>

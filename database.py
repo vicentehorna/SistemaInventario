@@ -4571,6 +4571,121 @@ def get_reporte_clientes_detalle(id_cliente, fecha_desde, fecha_hasta):
                 pass
 
 
+def get_reporte_proveedores(fecha_desde, fecha_hasta, proveedor=''):
+    """
+    Proveedores con compras en un rango de fechas: importe total comprado y fecha de la última compra.
+    Excluye compras anuladas. proveedor filtra por RUC o razón social, coincidencia parcial.
+    """
+    desde = _fecha_filtro_reporte(fecha_desde, 'Fecha desde')
+    hasta = _fecha_filtro_reporte(fecha_hasta, 'Fecha hasta')
+    if desde > hasta:
+        raise ValueError('La fecha desde no puede ser mayor que la fecha hasta.')
+
+    patron_proveedor = _patron_busqueda_item(proveedor)
+    desde_dt = datetime(desde.year, desde.month, desde.day)
+    hasta_exc = datetime(hasta.year, hasta.month, hasta.day) + timedelta(days=1)
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT
+                e.IdEmpresa AS IdProveedor,
+                e.RUC AS Ruc,
+                e.RazonSocial AS RazonSocial,
+                SUM(c.Total) AS ImporteTotal,
+                MAX(c.FechaCompra) AS FechaUltimaCompra
+            FROM dbo.Inventario_ComprasCab c
+            INNER JOIN dbo.Inventario_Empresas e ON e.IdEmpresa = c.IdProveedor
+            WHERE UPPER(LTRIM(RTRIM(ISNULL(c.EstadoCompra, '')))) NOT IN ('ANULADA', 'ANULADO')
+              AND c.FechaCompra >= ?
+              AND c.FechaCompra < ?
+              AND (
+                    ? = N''
+                    OR e.RUC LIKE ?
+                    OR e.RazonSocial LIKE ?
+                  )
+            GROUP BY e.IdEmpresa, e.RUC, e.RazonSocial
+            ORDER BY SUM(c.Total) DESC, e.RazonSocial
+            """,
+            (desde_dt, hasta_exc, patron_proveedor, patron_proveedor, patron_proveedor),
+        )
+        columns = [col[0] for col in cursor.description]
+        rows = []
+        for row in cursor.fetchall():
+            fila = {col: val for col, val in zip(columns, row)}
+            rows.append({k.lower(): v for k, v in fila.items()})
+        cursor.close()
+        return rows
+    except Exception as e:
+        _logger_db.exception("get_reporte_proveedores: %s", e)
+        raise
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def get_reporte_proveedores_detalle(id_proveedor, fecha_desde, fecha_hasta):
+    """Ítems comprados a un proveedor en el rango de fechas (compras no anuladas), de la más reciente a la más antigua."""
+    try:
+        id_proveedor_i = int(id_proveedor)
+    except (TypeError, ValueError):
+        raise ValueError('Proveedor no válido.')
+
+    desde = _fecha_filtro_reporte(fecha_desde, 'Fecha desde')
+    hasta = _fecha_filtro_reporte(fecha_hasta, 'Fecha hasta')
+    if desde > hasta:
+        raise ValueError('La fecha desde no puede ser mayor que la fecha hasta.')
+    desde_dt = datetime(desde.year, desde.month, desde.day)
+    hasta_exc = datetime(hasta.year, hasta.month, hasta.day) + timedelta(days=1)
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT
+                i.Codigo AS Codigo,
+                i.Descripcion AS Descripcion,
+                d.Cantidad AS Cantidad,
+                d.PrecioUnitario AS PrecioUnitario,
+                d.TotalLinea AS TotalLinea,
+                c.FechaCompra AS FechaCompra
+            FROM dbo.Inventario_ComprasDet d
+            INNER JOIN dbo.Inventario_ComprasCab c ON c.IdCompra = d.IdCompra
+            INNER JOIN dbo.Inventario_Items i ON i.IdItem = d.IdItem
+            WHERE c.IdProveedor = ?
+              AND UPPER(LTRIM(RTRIM(ISNULL(c.EstadoCompra, '')))) NOT IN ('ANULADA', 'ANULADO')
+              AND c.FechaCompra >= ?
+              AND c.FechaCompra < ?
+            ORDER BY c.FechaCompra DESC, c.IdCompra DESC, d.IdCompraDet
+            """,
+            (id_proveedor_i, desde_dt, hasta_exc),
+        )
+        columns = [col[0] for col in cursor.description]
+        rows = []
+        for row in cursor.fetchall():
+            fila = {col: val for col, val in zip(columns, row)}
+            rows.append({k.lower(): v for k, v in fila.items()})
+        cursor.close()
+        return rows
+    except Exception as e:
+        _logger_db.exception("get_reporte_proveedores_detalle: %s", e)
+        raise
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
 def anular_venta(id_venta):
     """Anula una venta activa y devuelve el stock del detalle al almacén."""
     conn = None
