@@ -7,7 +7,7 @@ import io
 import zipfile
 import base64
 import unicodedata
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 from decimal import Decimal
 
@@ -112,6 +112,8 @@ from database import (
     actualizar_empresa_config,
     crear_solicitud_alerta,
     get_solicitudes_alerta,
+    get_alerta_config,
+    guardar_alerta_config,
 )
 
 load_dotenv()
@@ -2644,12 +2646,81 @@ def _fecha_hora_txt(valor):
     return valor.strftime('%d/%m/%Y %H:%M') if hasattr(valor, 'strftime') else ''
 
 
+_DIAS_SEMANA = ('lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo')
+_HORA_CORTE_ALERTA = '20:00'
+
+
+def _proximo_envio_alerta(config, ahora):
+    """Texto con la fecha y hora del próximo envío automático, o None si no hay ninguno programado."""
+    dias = str(config.get('dias') or '')
+    if not config.get('activo') or '1' not in dias:
+        return None
+    hora = config.get('hora') or '09:00'
+    ultimo = config.get('ultimo_envio')
+    ya_enviado_hoy = hasattr(ultimo, 'date') and ultimo.date() >= ahora.date()
+    for desplazamiento in range(8):
+        dia = ahora.date() + timedelta(days=desplazamiento)
+        if dias[dia.weekday()] != '1':
+            continue
+        if desplazamiento == 0 and (ya_enviado_hoy or ahora.strftime('%H:%M') >= _HORA_CORTE_ALERTA):
+            continue
+        if desplazamiento == 0 and ahora.strftime('%H:%M') >= hora:
+            return 'en el próximo minuto'
+        return f"{_DIAS_SEMANA[dia.weekday()]} {dia.strftime('%d/%m/%Y')} a las {hora}"
+    return None
+
+
+def _alerta_config_contexto(empresa, form=None):
+    config = get_alerta_config(empresa.get('company'))
+    if form:
+        config.update(form)
+    ahora = datetime.now(_APP_TZ).replace(tzinfo=None)
+    fecha_act = config.get('fecha_activacion')
+    config['fecha_activacion_txt'] = fecha_act.strftime('%d/%m/%Y') if hasattr(fecha_act, 'strftime') else ''
+    config['proximo_envio'] = _proximo_envio_alerta(config, ahora)
+    return config
+
+
 @app.route('/configuracion/empresa', methods=['GET'])
 @login_required
 def configuracion_empresa_page():
-    """Datos básicos de la empresa y envío manual de alertas por WhatsApp."""
+    """Datos básicos de la empresa, envío manual y alerta automática diaria por WhatsApp."""
     ensure_user_session()
-    return render_template('configuracion_empresa.html', empresa=_empresa_config_actual() or {})
+    empresa = _empresa_config_actual() or {}
+    return render_template(
+        'configuracion_empresa.html',
+        empresa=empresa,
+        alerta=_alerta_config_contexto(empresa),
+    )
+
+
+@app.route('/configuracion/alertas/automatica/guardar', methods=['POST'])
+@login_required
+def configuracion_alerta_automatica_guardar():
+    ensure_user_session()
+    empresa = _empresa_config_actual() or {}
+    activo = request.form.get('activo') == '1'
+    hora = str(request.form.get('hora') or '').strip()
+    dias = ''.join('1' if request.form.get(f'dia_{i}') else '0' for i in range(7))
+    if activo and not str(empresa.get('telefono') or '').strip():
+        ok, msg = False, 'Configure y guarde primero el teléfono emisor.'
+    else:
+        ok, msg = guardar_alerta_config(
+            empresa.get('company'),
+            activo,
+            hora,
+            dias,
+            getattr(current_user, 'username', None),
+            datetime.now(_APP_TZ).replace(tzinfo=None),
+        )
+    flash(msg, 'success' if ok else 'error')
+    if ok:
+        return redirect(url_for('configuracion_empresa_page'))
+    return render_template(
+        'configuracion_empresa.html',
+        empresa=empresa,
+        alerta=_alerta_config_contexto(empresa, {'activo': activo, 'hora': hora, 'dias': dias}),
+    )
 
 
 @app.route('/configuracion/empresa/guardar', methods=['POST'])
@@ -2674,7 +2745,11 @@ def configuracion_empresa_guardar():
     flash(msg, 'success' if ok else 'error')
     if ok:
         return redirect(url_for('configuracion_empresa_page'))
-    return render_template('configuracion_empresa.html', empresa={**empresa, **form})
+    return render_template(
+        'configuracion_empresa.html',
+        empresa={**empresa, **form},
+        alerta=_alerta_config_contexto(empresa),
+    )
 
 
 @app.route('/configuracion/alertas/enviar', methods=['POST'])

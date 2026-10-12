@@ -5477,6 +5477,128 @@ def crear_solicitud_alerta(company, usuario, fecha_solicitud, tipo='CLIENTES_HOY
                 pass
 
 
+ALERTA_HORA_MIN = '07:00'
+ALERTA_HORA_MAX = '19:59'
+ALERTA_DIAS_DEFECTO = '1111110'
+
+
+def get_alerta_config(company):
+    """Configuración de la alerta automática diaria. Si no existe, retorna los valores por defecto."""
+    company_s = str(company or '').strip()
+    config = {
+        'activo': False,
+        'hora': '09:00',
+        'dias': ALERTA_DIAS_DEFECTO,
+        'fecha_activacion': None,
+        'ultimo_envio': None,
+    }
+    if not company_s:
+        return config
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT Activo, HoraEnvio, DiasSemana, FechaActivacion, UltimoEnvio
+            FROM dbo.Inventario_AlertasConfig
+            WHERE Company = ?
+            """,
+            (company_s,),
+        )
+        row = cursor.fetchone()
+        cursor.close()
+        if row:
+            config.update({
+                'activo': bool(row[0]),
+                'hora': str(row[1] or '09:00').strip(),
+                'dias': str(row[2] or ALERTA_DIAS_DEFECTO).strip(),
+                'fecha_activacion': row[3],
+                'ultimo_envio': row[4],
+            })
+        return config
+    except Exception as e:
+        _logger_db.exception("get_alerta_config: %s", e)
+        return config
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def guardar_alerta_config(company, activo, hora, dias, usuario, ahora):
+    """
+    Guarda la configuración de la alerta automática diaria. Retorna (ok, mensaje).
+    dias: 7 caracteres '1'/'0' de lunes a domingo. La fecha de activación se fija la primera vez que se activa.
+    """
+    company_s = str(company or '').strip()
+    hora_s = str(hora or '').strip()[:5]
+    dias_s = str(dias or '').strip()
+    activo_b = bool(activo)
+
+    if not company_s:
+        return False, "No se encontró la empresa configurada."
+    if not re.fullmatch(r'([01]\d|2[0-3]):[0-5]\d', hora_s):
+        return False, "Indique una hora válida."
+    if not (ALERTA_HORA_MIN <= hora_s <= ALERTA_HORA_MAX):
+        return False, "La hora de envío debe estar entre las 07:00 y las 19:59."
+    if not re.fullmatch(r'[01]{7}', dias_s):
+        return False, "Días de envío no válidos."
+    if activo_b and '1' not in dias_s:
+        return False, "Marque al menos un día de envío."
+
+    hoy = datetime(ahora.year, ahora.month, ahora.day)
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            UPDATE dbo.Inventario_AlertasConfig
+            SET Activo = ?, HoraEnvio = ?, DiasSemana = ?,
+                FechaActivacion = CASE WHEN ? = 1 AND FechaActivacion IS NULL THEN ? ELSE FechaActivacion END,
+                XLastUser = ?, XLastDate = ?
+            WHERE Company = ?
+            """,
+            (1 if activo_b else 0, hora_s, dias_s, 1 if activo_b else 0, hoy,
+             str(usuario or 'WEB')[:50], ahora, company_s),
+        )
+        if cursor.rowcount == 0:
+            cursor.execute(
+                """
+                INSERT INTO dbo.Inventario_AlertasConfig
+                    (Company, Activo, HoraEnvio, DiasSemana, FechaActivacion, XLastUser, XLastDate)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (company_s, 1 if activo_b else 0, hora_s, dias_s, hoy if activo_b else None,
+                 str(usuario or 'WEB')[:50], ahora),
+            )
+        conn.commit()
+        cursor.close()
+        if activo_b:
+            return True, "Alerta automática activada."
+        return True, "Alerta automática detenida."
+    except Exception as e:
+        _logger_db.exception("guardar_alerta_config: %s", e)
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        err = str(e).lower()
+        if 'invalid object name' in err and 'alertasconfig' in err:
+            return False, "Falta la tabla de configuración. Ejecute sql/Inventario_AlertasAutomaticas.sql."
+        return False, "Error al guardar la configuración de la alerta."
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
 def get_solicitudes_alerta(company, limite=10):
     """Últimas solicitudes de envío de alertas de la empresa."""
     conn = None

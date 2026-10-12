@@ -160,6 +160,43 @@
         color: var(--text-muted);
     }
 
+    .config-view .auto-grid {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1.5rem 2.5rem;
+        align-items: flex-start;
+    }
+    .config-view .auto-grid .input-hora { width: 140px; }
+    .config-view .dias-semana {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem;
+    }
+    .config-view .dias-semana .btn {
+        min-width: 52px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        padding: 0.45rem 0.5rem;
+        border-radius: 8px;
+    }
+    .config-view .switch-activo .form-check-input {
+        width: 3rem;
+        height: 1.5rem;
+        cursor: pointer;
+    }
+    .config-view .switch-activo .form-check-label {
+        font-weight: 600;
+        padding-left: 0.5rem;
+        padding-top: 0.15rem;
+        cursor: pointer;
+    }
+    .config-view .estado-auto {
+        margin-top: 1.25rem;
+        font-size: 0.875rem;
+        color: var(--text-muted);
+    }
+    .config-view .estado-auto strong { color: var(--text-dark); }
+
     @media (max-width: 768px) {
         .config-view .grid-empresa { grid-template-columns: 1fr; }
         .config-view .form-field.span-2 { grid-column: auto; }
@@ -209,11 +246,63 @@
         </div>
     </form>
 
+    <form action="{{ url_for('configuracion_alerta_automatica_guardar') }}" method="POST" class="form-card-modern">
+        <div class="card-subtitle-form">Alerta Automática Diaria</div>
+        <p class="alerta-descripcion">
+            Cada día marcado, a la hora indicada, envía un recordatorio a los clientes con ventas <strong>pendientes</strong>
+            vencidas, hasta que la venta se cancele. Si el servidor no estuvo disponible a esa hora, el envío sale
+            apenas vuelva, siempre que sea antes de las 20:00.
+        </p>
+        <div class="auto-grid">
+            <div class="form-field">
+                <label>Estado</label>
+                <div class="form-check form-switch switch-activo">
+                    <input class="form-check-input" type="checkbox" role="switch" id="chkActivo" name="activo" value="1"
+                           {% if alerta.activo %}checked{% endif %}>
+                    <label class="form-check-label" for="chkActivo" id="lblActivo">{{ 'Activa' if alerta.activo else 'Detenida' }}</label>
+                </div>
+            </div>
+            <div class="form-field">
+                <label for="txtHora">Hora de envío</label>
+                <input type="time" id="txtHora" name="hora" class="input-modern input-hora" required
+                       min="07:00" max="19:59" value="{{ alerta.hora }}">
+                <span class="field-hint">Entre 07:00 y 19:59</span>
+            </div>
+            <div class="form-field">
+                <label>Días de envío</label>
+                <div class="dias-semana">
+                    {% for nombre in ['LUN', 'MAR', 'MIÉ', 'JUE', 'VIE', 'SÁB', 'DOM'] %}
+                    <input type="checkbox" class="btn-check" id="dia{{ loop.index0 }}" name="dia_{{ loop.index0 }}" value="1"
+                           autocomplete="off" {% if alerta.dias[loop.index0] == '1' %}checked{% endif %}>
+                    <label class="btn btn-outline-primary" for="dia{{ loop.index0 }}">{{ nombre }}</label>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        <div class="estado-auto">
+            {% if alerta.activo %}
+                {% if alerta.proximo_envio %}
+                <div><i class="bi bi-clock" aria-hidden="true"></i> Próximo envío: <strong>{{ alerta.proximo_envio }}</strong></div>
+                {% endif %}
+                {% if alerta.fecha_activacion_txt %}
+                <div><i class="bi bi-calendar-check" aria-hidden="true"></i> Incluye ventas que vencen desde el <strong>{{ alerta.fecha_activacion_txt }}</strong>.</div>
+                {% endif %}
+            {% else %}
+                <div><i class="bi bi-pause-circle" aria-hidden="true"></i> La alerta automática está detenida. No se enviarán recordatorios diarios.</div>
+            {% endif %}
+        </div>
+        <div class="form-actions">
+            <button type="submit" class="btn-modern btn-primary">
+                <i class="bi bi-save" aria-hidden="true"></i> Guardar
+            </button>
+        </div>
+    </form>
+
     <div class="form-card-modern">
         <div class="card-subtitle-form">Alertas de Cobranza por WhatsApp</div>
         <p class="alerta-descripcion">
-            Envía a cada cliente un recordatorio de sus ventas con pago <strong>pendiente</strong> que vencen hoy,
-            al celular registrado en su ficha. Los clientes sin celular se omiten.
+            Envía ahora a cada cliente un recordatorio de sus ventas con pago <strong>pendiente</strong> que vencen hoy,
+            al celular registrado en su ficha. Los clientes sin celular, o que ya recibieron alerta hoy, se omiten.
         </p>
         <div class="alerta-acciones">
             <button type="button" class="btn-modern btn-whatsapp" id="btnEnviarAlerta">
@@ -332,6 +421,11 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
         }
         await cargarSolicitudes();
+    });
+
+    const chkActivo = document.getElementById('chkActivo');
+    chkActivo.addEventListener('change', function () {
+        document.getElementById('lblActivo').textContent = chkActivo.checked ? 'Activa' : 'Detenida';
     });
 
     cargarSolicitudes();

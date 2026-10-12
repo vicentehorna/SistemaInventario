@@ -1,7 +1,7 @@
 """Alertas por WhatsApp de comprobantes vencidos (Evolution API v2).
 
 Uso:
-    python alertas_vencimiento.py --atender-solicitudes   # atiende los envíos pedidos desde la app (tarea programada)
+    python alertas_vencimiento.py --atender-solicitudes   # alerta automática diaria y envíos pedidos desde la app (tarea programada)
     python alertas_vencimiento.py --clientes              # avisa a cada cliente sus ventas que vencen hoy o ya vencieron
     python alertas_vencimiento.py --clientes --solo-hoy   # solo las ventas que vencen hoy
     python alertas_vencimiento.py --clientes --prueba     # muestra los mensajes en pantalla, no envía
@@ -81,10 +81,16 @@ def obtener_compras_vencen_hoy(hoy):
     )
 
 
-def obtener_ventas_por_cobrar(hoy, solo_hoy=False):
-    """Ventas activas con pago pendiente que vencen hoy (y, si no es solo_hoy, las ya vencidas)."""
+def obtener_ventas_por_cobrar(hoy, solo_hoy=False, vencidas_desde=None):
+    """Ventas activas con pago pendiente que vencen hoy (y, si no es solo_hoy, las ya vencidas).
+    vencidas_desde limita las ya vencidas a las que vencen desde esa fecha."""
     inicio = datetime(hoy.year, hoy.month, hoy.day)
-    desde = inicio if solo_hoy else datetime(1900, 1, 1)
+    if solo_hoy:
+        desde = inicio
+    elif vencidas_desde:
+        desde = datetime(vencidas_desde.year, vencidas_desde.month, vencidas_desde.day)
+    else:
+        desde = datetime(1900, 1, 1)
     return _consultar(
         """
         SELECT v.IdVenta, v.IdCliente, v.TipoComprobante, v.NroComprobanteRef,
@@ -189,13 +195,44 @@ def enviar_whatsapp(mensaje, numero_destino):
         return False
 
 
-def alertar_clientes(hoy, solo_hoy, solo_mostrar, empresa_nombre=EMPRESA_NOMBRE):
-    """Envía un mensaje por cliente con sus ventas por cobrar. Retorna un resumen del envío."""
-    resumen = {'clientes': 0, 'enviados': 0, 'fallidos': 0, 'sin_celular': 0, 'detalle': []}
-    ventas = obtener_ventas_por_cobrar(hoy, solo_hoy)
+def _reservar_aviso(company, hoy, id_cliente, numero, comprobantes, id_solicitud):
+    """Registra que el cliente será avisado hoy. Retorna False si ya fue avisado hoy."""
+    try:
+        _ejecutar_sql(
+            """
+            INSERT INTO dbo.Inventario_AlertasEnvio
+                (Company, Fecha, IdCliente, Telefono, Comprobantes, IdSolicitud, FechaEnvio)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (company, datetime(hoy.year, hoy.month, hoy.day), id_cliente, numero, comprobantes,
+             id_solicitud, datetime.now(APP_TZ).replace(tzinfo=None)),
+        )
+        return True
+    except Exception as e:
+        if 'UQ_AlertasEnvio_Dia' in str(e) or 'duplicate' in str(e).lower():
+            return False
+        raise
+
+
+def _liberar_aviso(company, hoy, id_cliente):
+    _ejecutar_sql(
+        "DELETE FROM dbo.Inventario_AlertasEnvio WHERE Company = ? AND Fecha = ? AND IdCliente = ?",
+        (company, datetime(hoy.year, hoy.month, hoy.day), id_cliente),
+    )
+
+
+def alertar_clientes(hoy, solo_hoy, solo_mostrar, empresa_nombre=EMPRESA_NOMBRE,
+                     company=None, id_solicitud=None, vencidas_desde=None):
+    """Envía un mensaje por cliente con sus ventas por cobrar. Retorna un resumen del envío.
+    Con company, no vuelve a avisar a los clientes que ya recibieron alerta hoy."""
+    resumen = {'clientes': 0, 'enviados': 0, 'fallidos': 0, 'sin_celular': 0, 'ya_avisados': 0, 'detalle': []}
+    ventas = obtener_ventas_por_cobrar(hoy, solo_hoy, vencidas_desde)
     if not ventas:
         log.info('Sin ventas pendientes por cobrar al %s.', _fecha_txt(hoy))
-        resumen['detalle'].append(f'No hay ventas pendientes que venzan el {_fecha_txt(hoy)}.')
+        if solo_hoy:
+            resumen['detalle'].append(f'No hay ventas pendientes que venzan el {_fecha_txt(hoy)}.')
+        else:
+            resumen['detalle'].append(f'No hay ventas pendientes vencidas al {_fecha_txt(hoy)}.')
         return resumen
 
     por_cliente = {}
@@ -218,17 +255,26 @@ def alertar_clientes(hoy, solo_hoy, solo_mostrar, empresa_nombre=EMPRESA_NOMBRE)
             print(f"\n----- {cliente} -> {numero} -----\n{mensaje}")
             continue
 
+        id_cliente = ventas_cliente[0]['idcliente']
+        if company and not _reservar_aviso(company, hoy, id_cliente, numero, len(ventas_cliente), id_solicitud):
+            resumen['ya_avisados'] += 1
+            resumen['detalle'].append(f'Ya avisado hoy: {cliente}')
+            continue
+
         if resumen['enviados'] + resumen['fallidos']:
             time.sleep(random.uniform(*PAUSA_ENTRE_ENVIOS))
         if enviar_whatsapp(mensaje, numero):
             resumen['enviados'] += 1
             resumen['detalle'].append(f'Enviado: {cliente} ({numero}), {len(ventas_cliente)} comprobante(s)')
         else:
+            if company:
+                _liberar_aviso(company, hoy, id_cliente)
             resumen['fallidos'] += 1
             resumen['detalle'].append(f'Falló: {cliente} ({numero})')
 
-    log.info('Clientes con deuda: %d | enviados: %d | fallidos: %d | sin celular: %d',
-             resumen['clientes'], resumen['enviados'], resumen['fallidos'], resumen['sin_celular'])
+    log.info('Clientes con deuda: %d | enviados: %d | fallidos: %d | sin celular: %d | ya avisados: %d',
+             resumen['clientes'], resumen['enviados'], resumen['fallidos'], resumen['sin_celular'],
+             resumen['ya_avisados'])
     return resumen
 
 
@@ -302,9 +348,65 @@ def _ejecutar_sql(sql, params):
         conn.close()
 
 
+HORA_CORTE_AUTOMATICA = '20:00'
+
+
+def programar_envios_automaticos(ahora):
+    """Registra la solicitud AUTOMATICA del día para cada empresa con la alerta activa, si ya llegó la hora.
+    Si el servidor no estuvo disponible a esa hora, la registra apenas vuelva, antes de HORA_CORTE_AUTOMATICA."""
+    hora_actual = ahora.strftime('%H:%M')
+    if hora_actual >= HORA_CORTE_AUTOMATICA:
+        return
+    hoy = datetime(ahora.year, ahora.month, ahora.day)
+    try:
+        configs = _consultar(
+            "SELECT Company, HoraEnvio, DiasSemana FROM dbo.Inventario_AlertasConfig WHERE Activo = 1",
+            (),
+        )
+    except Exception as e:
+        log.warning('No se pudo leer la configuración de la alerta automática: %s', e)
+        return
+
+    for cfg in configs:
+        company = str(cfg['company']).strip()
+        dias = str(cfg.get('diassemana') or '').strip()
+        hora = str(cfg.get('horaenvio') or '').strip()
+        if len(dias) != 7 or dias[ahora.weekday()] != '1' or hora_actual < hora:
+            continue
+        filas = _ejecutar_sql(
+            """
+            UPDATE dbo.Inventario_AlertasConfig
+            SET UltimoEnvio = ?
+            OUTPUT INSERTED.Company
+            WHERE Company = ? AND Activo = 1 AND (UltimoEnvio IS NULL OR UltimoEnvio < ?);
+            """,
+            (hoy, company, hoy),
+        )
+        if not filas:
+            continue
+        _ejecutar_sql(
+            """
+            INSERT INTO dbo.Inventario_AlertasSolicitud (Company, Tipo, Estado, Usuario, FechaSolicitud)
+            VALUES (?, 'AUTOMATICA', 'PENDIENTE', 'Automático', ?)
+            """,
+            (company, ahora),
+        )
+        log.info('Alerta automática del %s programada para la empresa %s (hora %s).',
+                 _fecha_txt(hoy), company, hora)
+
+
+def _fecha_activacion(company):
+    filas = _consultar(
+        "SELECT FechaActivacion FROM dbo.Inventario_AlertasConfig WHERE Company = ?",
+        (company,),
+    )
+    return filas[0]['fechaactivacion'] if filas else None
+
+
 def atender_solicitudes():
-    """Procesa las solicitudes PENDIENTE registradas desde la app."""
+    """Programa la alerta automática del día y procesa las solicitudes PENDIENTE."""
     ahora = lambda: datetime.now(APP_TZ).replace(tzinfo=None)
+    programar_envios_automaticos(ahora())
     _ejecutar_sql(
         """
         UPDATE dbo.Inventario_AlertasSolicitud
@@ -337,13 +439,20 @@ def atender_solicitudes():
         try:
             empresa = obtener_empresa(company)
             problema = 'No se encontró la empresa.' if not empresa else verificar_emisor(empresa.get('telephone'))
+            automatica = tipo == 'AUTOMATICA'
+            vencidas_desde = _fecha_activacion(company) if automatica else None
+            if not problema and automatica and not vencidas_desde:
+                problema = 'La alerta automática no tiene fecha de activación.'
             if problema:
                 estado = 'ERROR'
                 resumen['detalle'].append(problema)
                 log.error('Solicitud %s: %s', id_solicitud, problema)
             else:
                 nombre = str(empresa.get('description') or '').strip() or EMPRESA_NOMBRE
-                resumen = alertar_clientes(datetime.now(APP_TZ).date(), True, False, nombre)
+                resumen = alertar_clientes(
+                    datetime.now(APP_TZ).date(), not automatica, False, nombre,
+                    company=company, id_solicitud=id_solicitud, vencidas_desde=vencidas_desde,
+                )
                 if resumen['fallidos'] and not resumen['enviados']:
                     estado = 'ERROR'
         except Exception as e:
