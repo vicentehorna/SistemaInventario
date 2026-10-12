@@ -2184,7 +2184,6 @@ def lista_ventas_post():
         estado_pago = ''
 
     headers_es = [
-        'N° Venta',
         'Cliente',
         'Fecha venta',
         'Fecha Vcto',
@@ -2200,7 +2199,6 @@ def lista_ventas_post():
         for r in rows:
             ids.append(r.get('idventa'))
             data.append([
-                _jsonable_value(r.get('nroventa')),
                 _jsonable_value(r.get('razonsocial')),
                 _jsonable_value(r.get('fechaventa')),
                 _jsonable_value(r.get('fechavencimiento')),
@@ -2229,11 +2227,9 @@ def _comprobante_txt(tipo, numero):
 
 
 def _comprobante_venta_txt(venta):
-    """Comprobante SUNAT de la venta, ej. 'Factura E001-702' o 'Sin comprobante'."""
-    serie = str(venta.get('seriecomprobante') or '').strip()
-    numero = venta.get('numerocomprobante')
-    nro = f'{serie}-{numero}' if serie and numero else ''
-    return _comprobante_txt(venta.get('tipocomprobante') or 'NINGUNO', nro)
+    """Nota de venta de la fila del listado, ej. 'Nota de venta NV01-00000021'."""
+    nro = str(venta.get('nroventa') or '').strip() or str(venta.get('idventa') or '').strip()
+    return _comprobante_txt('NOTA_VENTA', nro)
 
 
 @app.route('/operaciones/ventas/detalle', methods=['POST'])
