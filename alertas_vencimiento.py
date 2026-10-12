@@ -93,7 +93,8 @@ def obtener_ventas_por_cobrar(hoy, solo_hoy=False, vencidas_desde=None):
         desde = datetime(1900, 1, 1)
     return _consultar(
         """
-        SELECT v.IdVenta, v.IdCliente, v.TipoComprobante, v.NroComprobanteRef,
+        SELECT v.IdVenta, v.NroVenta, v.IdCliente, v.TipoComprobante,
+               v.SerieComprobante, v.NumeroComprobante,
                v.FechaVenta, v.FechaVencimiento, v.Total, e.RazonSocial, e.Telefono
         FROM dbo.Inventario_VentasCab v
         INNER JOIN dbo.Inventario_Empresas e ON e.IdEmpresa = v.IdCliente
@@ -146,12 +147,18 @@ def _estado_vencimiento(fecha_venc, hoy):
 
 
 def _bloque_venta(venta, hoy):
-    tipo = TIPOS_COMPROBANTE.get(str(venta.get('tipocomprobante') or '').upper(), 'Comprobante')
-    numero = (venta.get('nrocomprobanteref') or '').strip() or f"N° {venta['idventa']}"
+    nro_venta = (venta.get('nroventa') or '').strip() or f"N° {venta['idventa']}"
+    tipo = str(venta.get('tipocomprobante') or '').upper()
+    serie = str(venta.get('seriecomprobante') or '').strip()
+    numero = venta.get('numerocomprobante')
+    comprobante = ''
+    if tipo in ('FACTURA', 'BOLETA') and serie and numero:
+        nombre = TIPOS_COMPROBANTE.get(tipo, 'Comprobante')
+        comprobante = f"\n🧾 *{nombre}:* {serie}-{numero}"
     monto = float(venta.get('total') or 0)
     fecha_venc = venta.get('fechavencimiento')
     return (
-        f"📄 *{tipo}:* {numero}\n"
+        f"📄 *Nota de venta:* {nro_venta}{comprobante}\n"
         f"📅 *Fecha de emisión:* {_fecha_txt(venta.get('fechaventa'))}\n"
         f"⏰ *Vencimiento:* {_fecha_txt(fecha_venc)} ({_estado_vencimiento(fecha_venc, hoy)})\n"
         f"💰 *Monto:* S/ {monto:,.2f}"

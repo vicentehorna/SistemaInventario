@@ -3807,10 +3807,37 @@ def _calcular_totales_venta(detalles, incluye_igv):
     return _calcular_totales_compra(detalles, incluye_igv)
 
 
+TIPOS_COMPROBANTE_VENTA = ('NINGUNO', 'BOLETA', 'FACTURA')
+
+
+def _validar_comprobante_venta(tipo_comprobante, serie_comprobante, numero_comprobante):
+    """
+    Comprobante SUNAT de la venta (emitido fuera del sistema).
+    Retorna (tipo, serie, numero, None) o (None, None, None, mensaje_error).
+    """
+    tipo = (tipo_comprobante or 'NINGUNO').strip().upper()
+    if tipo not in TIPOS_COMPROBANTE_VENTA:
+        return None, None, None, "Tipo de comprobante no válido."
+    if tipo == 'NINGUNO':
+        return tipo, None, None, None
+    serie = str(serie_comprobante or '').strip().upper()
+    if not re.fullmatch(r'[A-Z0-9]{4}', serie):
+        return None, None, None, "La serie del comprobante debe tener 4 caracteres (ej.: F001, B001, E001)."
+    try:
+        numero = int(str(numero_comprobante or '').strip())
+    except ValueError:
+        return None, None, None, "Ingrese el número del comprobante."
+    if not 1 <= numero <= 99999999:
+        return None, None, None, "El número del comprobante debe estar entre 1 y 99999999."
+    return tipo, serie, numero, None
+
+
 def insertar_venta(
     id_cliente,
     fecha_venta,
     tipo_comprobante,
+    serie_comprobante,
+    numero_comprobante,
     nro_comprobante_ref,
     incluye_igv,
     estado_pago,
@@ -3818,7 +3845,7 @@ def insertar_venta(
     nro_dias=0,
 ):
     """
-    Registra cabecera y detalle de venta; descuenta stock por cada línea.
+    Registra cabecera y detalle de venta con el siguiente número de nota de venta; descuenta stock.
     detalles: lista de dicts con id_item, cantidad, precio_unitario.
     """
     from decimal import Decimal, ROUND_HALF_UP
@@ -3831,10 +3858,11 @@ def insertar_venta(
     except (TypeError, ValueError):
         return False, "Cliente no válido."
 
-    tipos_ok = ('FACTURA', 'BOLETA', 'NOTA_VENTA')
-    tipo = (tipo_comprobante or '').strip().upper()
-    if tipo not in tipos_ok:
-        return False, "Tipo de comprobante no válido."
+    tipo, serie_comp, numero_comp, err_comp = _validar_comprobante_venta(
+        tipo_comprobante, serie_comprobante, numero_comprobante
+    )
+    if err_comp:
+        return False, err_comp
 
     estado_pago_val = (estado_pago or 'PENDIENTE').strip().upper()
     if estado_pago_val not in ('PENDIENTE', 'CANCELADO'):
@@ -3912,20 +3940,37 @@ def insertar_venta(
                     f"Disponible: {stock_disp}, solicitado: {ln['cantidad']}."
                 )
 
+        correlativo = obtener_siguiente_numero(cursor, 'NV')
+        if not correlativo:
+            conn.rollback()
+            cursor.close()
+            return False, (
+                "No hay una serie activa para Nota de Venta. "
+                "Configúrela en Configuración > Series y Correlativos."
+            )
+        nro_venta = correlativo['nro_documento']
+
         cursor.execute(
             """
             INSERT INTO dbo.Inventario_VentasCab (
-                IdCliente, FechaVenta, TipoComprobante, NroComprobanteRef,
+                IdCliente, FechaVenta, IdSerie, Serie, Numero, NroVenta,
+                TipoComprobante, SerieComprobante, NumeroComprobante, NroComprobanteRef,
                 IncluyeIGV, SubTotal, IGV, Total,
                 EstadoVenta, EstadoPago, NroDias, FechaVencimiento
             )
             OUTPUT INSERTED.IdVenta
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVA', ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVA', ?, ?, ?)
             """,
             (
                 id_cliente,
                 fecha_dt,
+                correlativo['id_serie'],
+                correlativo['serie'],
+                correlativo['numero'],
+                nro_venta,
                 tipo,
+                serie_comp,
+                numero_comp,
                 nro_ref,
                 1 if incluye else 0,
                 float(subtotal),
@@ -3973,7 +4018,7 @@ def insertar_venta(
 
         conn.commit()
         cursor.close()
-        return True, f"Venta registrada correctamente (N° {id_venta}). Stock actualizado."
+        return True, f"Venta {nro_venta} registrada correctamente. Stock actualizado."
     except Exception as e:
         _logger_db.exception("insertar_venta: %s", e)
         if conn:
@@ -3987,6 +4032,13 @@ def insertar_venta(
                 "Las tablas de ventas no existen en la base de datos. "
                 "Ejecute el script sql/Inventario_Ventas.sql."
             )
+        if 'ux_ventascab_serienumero' in err:
+            return False, (
+                "El número de nota de venta ya existe. Revise el último número de la serie "
+                "en Configuración > Series y Correlativos."
+            )
+        if 'invalid column name' in err or 'invalid object name' in err:
+            return False, "Falta actualizar la base de datos. Ejecute sql/Inventario_Ventas_NotaVenta.sql."
         return False, "Error al registrar la venta. Verifique los datos e intente nuevamente."
     finally:
         if conn:
@@ -4009,7 +4061,8 @@ def get_venta_por_id(id_venta):
         cursor.execute(
             """
             SELECT
-                v.IdVenta, v.IdCliente, v.FechaVenta, v.TipoComprobante, v.NroComprobanteRef,
+                v.IdVenta, v.NroVenta, v.IdCliente, v.FechaVenta,
+                v.TipoComprobante, v.SerieComprobante, v.NumeroComprobante, v.NroComprobanteRef,
                 v.IncluyeIGV, v.EstadoPago, v.EstadoVenta, v.NroDias, v.FechaVencimiento
             FROM dbo.Inventario_VentasCab v
             WHERE v.IdVenta = ?
@@ -4058,13 +4111,15 @@ def actualizar_venta(
     id_cliente,
     fecha_venta,
     tipo_comprobante,
+    serie_comprobante,
+    numero_comprobante,
     nro_comprobante_ref,
     incluye_igv,
     estado_pago,
     detalles,
     nro_dias=0,
 ):
-    """Actualiza venta activa, recalcula detalle y ajusta stock."""
+    """Actualiza venta activa (sin cambiar su número de nota de venta), recalcula detalle y ajusta stock."""
     from decimal import Decimal, ROUND_HALF_UP
 
     if not detalles:
@@ -4075,10 +4130,11 @@ def actualizar_venta(
     except (TypeError, ValueError):
         return False, "Venta o cliente no válido."
 
-    tipos_ok = ('FACTURA', 'BOLETA', 'NOTA_VENTA')
-    tipo = (tipo_comprobante or '').strip().upper()
-    if tipo not in tipos_ok:
-        return False, "Tipo de comprobante no válido."
+    tipo, serie_comp, numero_comp, err_comp = _validar_comprobante_venta(
+        tipo_comprobante, serie_comprobante, numero_comprobante
+    )
+    if err_comp:
+        return False, err_comp
     estado_pago_val = (estado_pago or 'PENDIENTE').strip().upper()
     if estado_pago_val not in ('PENDIENTE', 'CANCELADO'):
         return False, "Estado de pago no válido."
@@ -4122,7 +4178,7 @@ def actualizar_venta(
 
         cursor.execute(
             """
-            SELECT EstadoVenta, EstadoPago, NroDias
+            SELECT EstadoVenta, EstadoPago, NroDias, NroVenta
             FROM dbo.Inventario_VentasCab
             WHERE IdVenta = ?
             """,
@@ -4177,7 +4233,8 @@ def actualizar_venta(
         cursor.execute(
             """
             UPDATE dbo.Inventario_VentasCab
-            SET IdCliente = ?, FechaVenta = ?, TipoComprobante = ?, NroComprobanteRef = ?,
+            SET IdCliente = ?, FechaVenta = ?,
+                TipoComprobante = ?, SerieComprobante = ?, NumeroComprobante = ?, NroComprobanteRef = ?,
                 IncluyeIGV = ?, SubTotal = ?, IGV = ?, Total = ?, EstadoPago = ?,
                 NroDias = ?, FechaVencimiento = ?
             WHERE IdVenta = ?
@@ -4186,6 +4243,8 @@ def actualizar_venta(
                 id_cliente,
                 fecha_dt,
                 tipo,
+                serie_comp,
+                numero_comp,
                 nro_ref,
                 1 if incluye else 0,
                 float(subtotal),
@@ -4249,7 +4308,7 @@ def actualizar_venta(
 
         conn.commit()
         cursor.close()
-        return True, f"Venta actualizada correctamente (N° {id_venta})."
+        return True, f"Venta {row_venta[3] or id_venta} actualizada correctamente."
     except Exception as e:
         _logger_db.exception("actualizar_venta: %s", e)
         if conn:
@@ -4288,11 +4347,13 @@ def get_lista_ventas_cabecera(codigo='', articulo='', cliente=0, estado_pago='')
             """
             SELECT
                 v.IdVenta,
+                v.NroVenta,
                 e.RazonSocial,
                 v.FechaVenta,
                 v.FechaVencimiento,
                 v.TipoComprobante,
-                v.NroComprobanteRef,
+                v.SerieComprobante,
+                v.NumeroComprobante,
                 v.EstadoPago,
                 v.Total
             FROM dbo.Inventario_VentasCab v
@@ -4311,7 +4372,7 @@ def get_lista_ventas_cabecera(codigo='', articulo='', cliente=0, estado_pago='')
                           AND (? = N'' OR i.Descripcion LIKE ?)
                     )
                   )
-            ORDER BY v.FechaVenta, v.IdVenta
+            ORDER BY v.FechaVenta, v.Numero
             """,
             (
                 cliente_i, cliente_i,
@@ -4895,13 +4956,14 @@ def anular_venta(id_venta):
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT EstadoVenta FROM dbo.Inventario_VentasCab WHERE IdVenta = ?",
+            "SELECT EstadoVenta, NroVenta FROM dbo.Inventario_VentasCab WHERE IdVenta = ?",
             (id_venta,),
         )
         row = cursor.fetchone()
         if not row:
             cursor.close()
             return False, "La venta no existe."
+        nro_venta = row[1] or id_venta
         estado = str(row[0] or '').strip().upper()
         if estado == 'ANULADA':
             cursor.close()
@@ -4932,7 +4994,7 @@ def anular_venta(id_venta):
         )
         conn.commit()
         cursor.close()
-        return True, f"Venta N° {id_venta} anulada correctamente."
+        return True, f"Venta {nro_venta} anulada correctamente."
     except Exception as e:
         _logger_db.exception("anular_venta: %s", e)
         if conn:
@@ -4949,16 +5011,330 @@ def anular_venta(id_venta):
                 pass
 
 
-PROFORMA_COMPANY_CORRELATIVO = 'BGT'
+TIPOS_DOCUMENTO_SERIE = {
+    'NV': 'Nota de Venta',
+    'PF': 'Proforma',
+    'RC': 'Recibo de Cobro',
+    'RP': 'Recibo de Pago',
+    'NI': 'Nota de Ingreso',
+}
+
+# Documentos que se imprimen solo con el número (sin el prefijo de la serie)
+TIPOS_DOCUMENTO_SIN_PREFIJO = ('PF',)
 
 
-def _formatear_nro_proforma(correlativo):
-    """Formatea correlativo numérico a 6 dígitos (ej. 96 -> '000096')."""
+def formatear_numero_documento(tipo_documento, serie, numero, longitud):
+    """Ej.: ('NV', 'NV01', 15, 8) -> 'NV01-00000015'; ('PF', 'PF01', 97, 6) -> '000097'."""
+    numero_txt = str(int(numero or 0)).zfill(int(longitud or 0))
+    if tipo_documento in TIPOS_DOCUMENTO_SIN_PREFIJO:
+        return numero_txt
+    return f"{serie}-{numero_txt}"
+
+
+def obtener_siguiente_numero(cursor, tipo_documento):
+    """
+    Incrementa y devuelve el correlativo de la serie activa del tipo de documento.
+    Debe ejecutarse con el cursor de la transacción que inserta el documento:
+    el bloqueo de la fila evita números repetidos y el rollback no deja huecos.
+    """
+    cursor.execute(
+        """
+        UPDATE dbo.Inventario_Series
+        SET UltimoNumero = UltimoNumero + 1
+        OUTPUT INSERTED.IdSerie, INSERTED.Serie, INSERTED.UltimoNumero, INSERTED.Longitud
+        WHERE TipoDocumento = ? AND Activo = 1
+        """,
+        (tipo_documento,),
+    )
+    row = cursor.fetchone()
+    if not row:
+        return None
+    id_serie, serie, numero, longitud = row
+    serie = str(serie).strip()
+    return {
+        'id_serie': int(id_serie),
+        'serie': serie,
+        'numero': int(numero),
+        'numero_formateado': str(int(numero)).zfill(int(longitud)),
+        'nro_documento': formatear_numero_documento(tipo_documento, serie, numero, longitud),
+    }
+
+
+def _max_numero_usado(cursor, tipo_documento, serie):
+    """Mayor correlativo ya emitido con la serie (las proformas no guardan la serie: se evalúa por tipo)."""
+    if tipo_documento == 'PF':
+        cursor.execute(
+            "SELECT ISNULL(MAX(TRY_CAST(NroProforma AS INT)), 0) FROM dbo.Inventario_ProformasCab"
+        )
+    elif tipo_documento == 'NV':
+        cursor.execute(
+            "SELECT ISNULL(MAX(Numero), 0) FROM dbo.Inventario_VentasCab WHERE Serie = ?",
+            (serie,),
+        )
+    else:
+        return 0
+    row = cursor.fetchone()
+    return int(row[0] or 0) if row else 0
+
+
+def get_serie_activa(tipo_documento):
+    """Serie activa del tipo de documento (con el próximo número), o None si no hay."""
+    for fila in get_series_documentos():
+        if fila['tipodocumento'] == tipo_documento and fila['activo']:
+            return fila
+    return None
+
+
+def get_series_documentos():
+    """Series de documentos internos con el próximo número a emitir."""
+    conn = None
     try:
-        n = int(correlativo)
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT IdSerie, TipoDocumento, Descripcion, Serie, UltimoNumero, Longitud, Activo
+            FROM dbo.Inventario_Series
+            """
+        )
+        filas = _filas_a_dicts(cursor)
+        cursor.close()
+        orden = list(TIPOS_DOCUMENTO_SERIE)
+        for f in filas:
+            f['tipodocumento'] = str(f['tipodocumento']).strip()
+            f['serie'] = str(f['serie']).strip()
+            f['activo'] = bool(f['activo'])
+            f['proximo'] = formatear_numero_documento(
+                f['tipodocumento'], f['serie'], int(f['ultimonumero']) + 1, f['longitud']
+            )
+        filas.sort(key=lambda f: (
+            orden.index(f['tipodocumento']) if f['tipodocumento'] in orden else len(orden),
+            not f['activo'],
+            f['serie'],
+        ))
+        return filas
+    except Exception as e:
+        _logger_db.exception("get_series_documentos: %s", e)
+        return []
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def get_serie_documento_por_id(id_serie):
+    """Una serie para edición."""
+    try:
+        id_serie_i = int(id_serie)
     except (TypeError, ValueError):
-        n = 0
-    return str(n).zfill(6)
+        return None
+    for fila in get_series_documentos():
+        if fila['idserie'] == id_serie_i:
+            return fila
+    return None
+
+
+def guardar_serie_documento(id_serie, tipo_documento, serie, ultimo_numero, longitud, activo):
+    """Crea o actualiza una serie. Si queda activa, desactiva la otra serie activa del mismo tipo."""
+    tipo = str(tipo_documento or '').strip().upper()
+    if tipo not in TIPOS_DOCUMENTO_SERIE:
+        return False, "Tipo de documento no válido."
+
+    serie_s = str(serie or '').strip().upper()
+    if not re.fullmatch(r'[A-Z0-9]{1,10}', serie_s):
+        return False, "La serie solo admite letras y números, máximo 10 caracteres."
+
+    try:
+        ultimo = int(str(ultimo_numero if ultimo_numero is not None else '').strip() or 0)
+        longitud_i = int(str(longitud or '').strip())
+    except ValueError:
+        return False, "El último número y la cantidad de dígitos deben ser números enteros."
+    if ultimo < 0:
+        return False, "El último número no puede ser negativo."
+    if not 4 <= longitud_i <= 10:
+        return False, "La cantidad de dígitos debe estar entre 4 y 10."
+    if ultimo >= 10 ** longitud_i:
+        return False, f"El último número no cabe en {longitud_i} dígitos."
+
+    id_serie_i = None
+    if str(id_serie or '').strip():
+        try:
+            id_serie_i = int(id_serie)
+        except (TypeError, ValueError):
+            return False, "Serie no válida."
+
+    activo_b = bool(activo)
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        if id_serie_i:
+            cursor.execute(
+                """
+                SELECT TipoDocumento, Serie, UltimoNumero
+                FROM dbo.Inventario_Series WITH (UPDLOCK, ROWLOCK)
+                WHERE IdSerie = ?
+                """,
+                (id_serie_i,),
+            )
+            row = cursor.fetchone()
+            if not row:
+                conn.rollback()
+                return False, "La serie no existe."
+            if str(row[0]).strip() != tipo:
+                conn.rollback()
+                return False, "No se puede cambiar el tipo de documento de una serie existente."
+            if str(row[1]).strip() != serie_s and int(row[2] or 0) > 0:
+                conn.rollback()
+                return False, (
+                    f"La serie {str(row[1]).strip()} ya emitió documentos y no se puede renombrar. "
+                    "Cree una serie nueva y desactive esta."
+                )
+
+        if activo_b:
+            max_usado = _max_numero_usado(cursor, tipo, serie_s)
+            if ultimo < max_usado:
+                conn.rollback()
+                return False, (
+                    f"El último número no puede ser menor a {max_usado}: "
+                    f"ese número de {TIPOS_DOCUMENTO_SERIE[tipo]} ya fue emitido."
+                )
+            cursor.execute(
+                """
+                UPDATE dbo.Inventario_Series SET Activo = 0
+                WHERE TipoDocumento = ? AND Activo = 1 AND IdSerie <> ?
+                """,
+                (tipo, id_serie_i or 0),
+            )
+
+        if id_serie_i:
+            cursor.execute(
+                """
+                UPDATE dbo.Inventario_Series
+                SET Serie = ?, UltimoNumero = ?, Longitud = ?, Activo = ?
+                WHERE IdSerie = ?
+                """,
+                (serie_s, ultimo, longitud_i, 1 if activo_b else 0, id_serie_i),
+            )
+        else:
+            cursor.execute(
+                """
+                INSERT INTO dbo.Inventario_Series (
+                    TipoDocumento, Descripcion, Serie, UltimoNumero, Longitud, Activo
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (tipo, TIPOS_DOCUMENTO_SERIE[tipo], serie_s, ultimo, longitud_i, 1 if activo_b else 0),
+            )
+
+        conn.commit()
+        cursor.close()
+        accion = "actualizada" if id_serie_i else "registrada"
+        return True, f"Serie {serie_s} de {TIPOS_DOCUMENTO_SERIE[tipo]} {accion} correctamente."
+    except pyodbc.IntegrityError as e:
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        if 'uq_series_tipo_serie' in str(e).lower():
+            return False, f"Ya existe la serie {serie_s} para {TIPOS_DOCUMENTO_SERIE[tipo]}."
+        return False, "No se pudo guardar la serie: datos duplicados o inválidos."
+    except Exception as e:
+        _logger_db.exception("guardar_serie_documento: %s", e)
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        if 'invalid object name' in str(e).lower() and 'series' in str(e).lower():
+            return False, "Falta la tabla de series. Ejecute sql/Inventario_Series.sql."
+        return False, "Error al guardar la serie."
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def cambiar_estado_serie(id_serie, activo):
+    """Activa (desactivando la otra del mismo tipo) o desactiva una serie. No se eliminan series."""
+    try:
+        id_serie_i = int(id_serie)
+    except (TypeError, ValueError):
+        return False, "Serie no válida."
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT TipoDocumento, Serie, UltimoNumero
+            FROM dbo.Inventario_Series WITH (UPDLOCK, ROWLOCK)
+            WHERE IdSerie = ?
+            """,
+            (id_serie_i,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            conn.rollback()
+            return False, "La serie no existe."
+        tipo = str(row[0]).strip()
+        serie_s = str(row[1]).strip()
+        descripcion = TIPOS_DOCUMENTO_SERIE.get(tipo, tipo)
+
+        if activo:
+            max_usado = _max_numero_usado(cursor, tipo, serie_s)
+            if int(row[2] or 0) < max_usado:
+                conn.rollback()
+                return False, (
+                    f"No se puede activar {serie_s}: su último número es menor a {max_usado}, "
+                    f"que ya fue emitido. Edite la serie y corrija el último número."
+                )
+            cursor.execute(
+                """
+                UPDATE dbo.Inventario_Series SET Activo = 0
+                WHERE TipoDocumento = ? AND Activo = 1 AND IdSerie <> ?
+                """,
+                (tipo, id_serie_i),
+            )
+            cursor.execute(
+                "UPDATE dbo.Inventario_Series SET Activo = 1 WHERE IdSerie = ?",
+                (id_serie_i,),
+            )
+            msg = f"Serie {serie_s} activada para {descripcion}."
+        else:
+            cursor.execute(
+                "UPDATE dbo.Inventario_Series SET Activo = 0 WHERE IdSerie = ?",
+                (id_serie_i,),
+            )
+            msg = (
+                f"Serie {serie_s} desactivada. No se podrán emitir documentos de "
+                f"{descripcion} hasta activar otra serie."
+            )
+
+        conn.commit()
+        cursor.close()
+        return True, msg
+    except Exception as e:
+        _logger_db.exception("cambiar_estado_serie: %s", e)
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        return False, "Error al cambiar el estado de la serie."
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 def _lineas_proforma_desde_detalles(detalles):
@@ -5004,9 +5380,9 @@ def _fecha_proforma_a_datetime(fecha_proforma):
         return None
 
 
-def insertar_proforma(id_cliente, fecha_proforma, detalles, company=PROFORMA_COMPANY_CORRELATIVO):
+def insertar_proforma(id_cliente, fecha_proforma, detalles):
     """
-    Registra cabecera y detalle de proforma; incrementa CorrelativoProforma en PR_mapping2.
+    Registra cabecera y detalle de proforma; toma el número de la serie activa de Proformas.
     No descuenta stock. detalles: lista de dicts con id_item, cantidad, precio_unitario.
     """
     try:
@@ -5021,8 +5397,6 @@ def insertar_proforma(id_cliente, fecha_proforma, detalles, company=PROFORMA_COM
     fecha_dt = _fecha_proforma_a_datetime(fecha_proforma)
     if not fecha_dt:
         return False, "Fecha de proforma no válida."
-
-    company = (company or PROFORMA_COMPANY_CORRELATIVO).strip() or PROFORMA_COMPANY_CORRELATIVO
 
     conn = None
     try:
@@ -5046,21 +5420,15 @@ def insertar_proforma(id_cliente, fecha_proforma, detalles, company=PROFORMA_COM
                 cursor.close()
                 return False, f"Artículo IdItem {ln['id_item']} no encontrado."
 
-        cursor.execute(
-            """
-            UPDATE dbo.PR_mapping2
-            SET CorrelativoProforma = CorrelativoProforma + 1
-            OUTPUT INSERTED.CorrelativoProforma
-            WHERE company = ?
-            """,
-            (company,),
-        )
-        row_corr = cursor.fetchone()
-        if not row_corr or row_corr[0] is None:
+        correlativo = obtener_siguiente_numero(cursor, 'PF')
+        if not correlativo:
             conn.rollback()
             cursor.close()
-            return False, f"No se encontró correlativo de proforma para la compañía {company}."
-        nro_proforma = _formatear_nro_proforma(row_corr[0])
+            return False, (
+                "No hay una serie activa para Proformas. "
+                "Configúrela en Configuración > Series y Correlativos."
+            )
+        nro_proforma = correlativo['nro_documento']
 
         cursor.execute(
             """
@@ -5112,7 +5480,10 @@ def insertar_proforma(id_cliente, fecha_proforma, detalles, company=PROFORMA_COM
             except Exception:
                 pass
         if "uq_proformas_nro" in err or "unique" in err:
-            return False, "El número de proforma ya existe. Intente guardar nuevamente."
+            return False, (
+                "El número de proforma ya existe. Revise el último número de la serie "
+                "en Configuración > Series y Correlativos."
+            )
         if "fk_proformas" in err:
             return False, "Datos de referencia inválidos (cliente o artículo)."
         return False, "No se pudo guardar la proforma: datos duplicados o referencia inválida."
@@ -5123,9 +5494,9 @@ def insertar_proforma(id_cliente, fecha_proforma, detalles, company=PROFORMA_COM
                 conn.rollback()
             except Exception:
                 pass
-        msg = str(e)
-        if 'correlativo de proforma' in msg.lower():
-            return False, f"No se encontró correlativo de proforma para la compañía {company}."
+        err = str(e).lower()
+        if 'invalid object name' in err and 'series' in err:
+            return False, "Falta la tabla de series. Ejecute sql/Inventario_Series.sql."
         return False, "Error al guardar la proforma. Verifique la conexión a la base de datos."
     finally:
         if conn:

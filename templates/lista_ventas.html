@@ -186,8 +186,8 @@ document.addEventListener('DOMContentLoaded', async function () {
     const URL_DETALLE = {{ url_for('lista_ventas_detalle_post') | tojson }};
     let lastExportVentas = null;
     let filtrosActuales = {};
-    const IDX_ESTADO_PAGO = 4;
-    const IDX_TOTAL = 5;
+    const IDX_ESTADO_PAGO = 5;
+    const IDX_TOTAL = 6;
     let datosActuales = { headers: [], data: [], ids: [] };
     const abiertas = new Set();
     const detalles = new Map();
@@ -474,12 +474,13 @@ document.addEventListener('DOMContentLoaded', async function () {
             sumCell.border = allBorders;
         }
 
-        ws.getColumn(1).width = 34;
-        ws.getColumn(2).width = 14;
+        ws.getColumn(1).width = 16;
+        ws.getColumn(2).width = 34;
         ws.getColumn(3).width = 14;
-        ws.getColumn(4).width = 24;
-        ws.getColumn(5).width = 16;
+        ws.getColumn(4).width = 14;
+        ws.getColumn(5).width = 24;
         ws.getColumn(6).width = 16;
+        ws.getColumn(7).width = 16;
 
         const buffer = await wb.xlsx.writeBuffer();
         const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });

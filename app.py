@@ -114,6 +114,13 @@ from database import (
     get_solicitudes_alerta,
     get_alerta_config,
     guardar_alerta_config,
+    TIPOS_DOCUMENTO_SERIE,
+    TIPOS_DOCUMENTO_SIN_PREFIJO,
+    get_series_documentos,
+    get_serie_documento_por_id,
+    get_serie_activa,
+    guardar_serie_documento,
+    cambiar_estado_serie,
 )
 
 load_dotenv()
@@ -1750,6 +1757,7 @@ def ventas_registro_page():
         clientes=get_clientes_activos(),
         articulos=get_articulos_para_venta(),
         fecha_actual=_fecha_hoy_app().isoformat(),
+        serie_nv=get_serie_activa('NV'),
     )
 
 
@@ -1761,6 +1769,8 @@ def ventas_guardar():
     id_cliente = request.form.get('id_cliente')
     fecha_venta = request.form.get('fecha_venta')
     tipo_comprobante = request.form.get('tipo_comprobante')
+    serie_comprobante = request.form.get('serie_comprobante')
+    numero_comprobante = request.form.get('numero_comprobante')
     nro_comprobante_ref = request.form.get('nro_comprobante_ref')
     incluye_igv = request.form.get('incluye_igv') in ('on', '1', 'true', 'True')
     estado_pago = request.form.get('estado_pago')
@@ -1783,6 +1793,8 @@ def ventas_guardar():
             id_cliente,
             fecha_venta,
             tipo_comprobante,
+            serie_comprobante,
+            numero_comprobante,
             nro_comprobante_ref,
             incluye_igv,
             estado_pago,
@@ -1795,6 +1807,8 @@ def ventas_guardar():
             id_cliente,
             fecha_venta,
             tipo_comprobante,
+            serie_comprobante,
+            numero_comprobante,
             nro_comprobante_ref,
             incluye_igv,
             estado_pago,
@@ -1810,11 +1824,14 @@ def ventas_guardar():
         return redirect(url_for('lista_ventas_page', **filtros_lista))
 
     credito_bloqueado = False
+    nro_venta = ''
     if id_venta:
         venta_guardada = get_venta_por_id(id_venta)
-        if venta_guardada and _credito_bloqueado(venta_guardada):
-            credito_bloqueado = True
-            nro_dias = venta_guardada.get('nrodias') or 0
+        if venta_guardada:
+            nro_venta = venta_guardada.get('nroventa') or ''
+            if _credito_bloqueado(venta_guardada):
+                credito_bloqueado = True
+                nro_dias = venta_guardada.get('nrodias') or 0
 
     flash(msg, 'error')
     return render_template(
@@ -1822,11 +1839,15 @@ def ventas_guardar():
         clientes=get_clientes_activos(),
         articulos=get_articulos_para_venta(),
         fecha_actual=fecha_venta or _fecha_hoy_app().isoformat(),
+        serie_nv=None if id_venta else get_serie_activa('NV'),
         form_preservado={
             'id_venta': id_venta,
+            'nro_venta': nro_venta,
             'id_cliente': id_cliente,
             'fecha_venta': fecha_venta,
             'tipo_comprobante': tipo_comprobante,
+            'serie_comprobante': serie_comprobante,
+            'numero_comprobante': numero_comprobante,
             'nro_comprobante_ref': nro_comprobante_ref,
             'incluye_igv': incluye_igv,
             'estado_pago': estado_pago,
@@ -2163,6 +2184,7 @@ def lista_ventas_post():
         estado_pago = ''
 
     headers_es = [
+        'N° Venta',
         'Cliente',
         'Fecha venta',
         'Fecha Vcto',
@@ -2178,10 +2200,11 @@ def lista_ventas_post():
         for r in rows:
             ids.append(r.get('idventa'))
             data.append([
+                _jsonable_value(r.get('nroventa')),
                 _jsonable_value(r.get('razonsocial')),
                 _jsonable_value(r.get('fechaventa')),
                 _jsonable_value(r.get('fechavencimiento')),
-                _comprobante_txt(r.get('tipocomprobante'), r.get('nrocomprobanteref')),
+                _comprobante_venta_txt(r),
                 _jsonable_value(r.get('estadopago')),
                 round(float(r.get('total') or 0), 2),
             ])
@@ -2203,6 +2226,14 @@ def _comprobante_txt(tipo, numero):
     tipo_txt = _TIPOS_COMPROBANTE_TXT.get(str(tipo or '').strip().upper(), str(tipo or '').strip())
     numero_txt = str(numero or '').strip()
     return f'{tipo_txt} {numero_txt}'.strip()
+
+
+def _comprobante_venta_txt(venta):
+    """Comprobante SUNAT de la venta, ej. 'Factura E001-702' o 'Sin comprobante'."""
+    serie = str(venta.get('seriecomprobante') or '').strip()
+    numero = venta.get('numerocomprobante')
+    nro = f'{serie}-{numero}' if serie and numero else ''
+    return _comprobante_txt(venta.get('tipocomprobante') or 'NINGUNO', nro)
 
 
 @app.route('/operaciones/ventas/detalle', methods=['POST'])
@@ -2752,6 +2783,85 @@ def configuracion_empresa_guardar():
     )
 
 
+def _form_serie(serie=None):
+    """Valores del formulario de series (vacío para una serie nueva)."""
+    if not serie:
+        return {'id_serie': '', 'tipo_documento': '', 'serie': '', 'ultimo_numero': 0,
+                'longitud': 8, 'activo': True, 'serie_bloqueada': False}
+    return {
+        'id_serie': serie['idserie'],
+        'tipo_documento': serie['tipodocumento'],
+        'serie': serie['serie'],
+        'ultimo_numero': serie['ultimonumero'],
+        'longitud': serie['longitud'],
+        'activo': serie['activo'],
+        'serie_bloqueada': int(serie['ultimonumero'] or 0) > 0,
+    }
+
+
+def _render_configuracion_series(form):
+    return render_template(
+        'configuracion_series.html',
+        series=get_series_documentos(),
+        tipos=TIPOS_DOCUMENTO_SERIE,
+        sin_prefijo=TIPOS_DOCUMENTO_SIN_PREFIJO,
+        form=form,
+    )
+
+
+@app.route('/configuracion/series', methods=['GET'])
+@login_required
+def configuracion_series_page():
+    """Series y correlativos de los documentos internos."""
+    ensure_user_session()
+    serie = None
+    id_editar = request.args.get('editar', type=int)
+    if id_editar:
+        serie = get_serie_documento_por_id(id_editar)
+        if not serie:
+            flash('La serie no existe.', 'error')
+    return _render_configuracion_series(_form_serie(serie))
+
+
+@app.route('/configuracion/series/guardar', methods=['POST'])
+@login_required
+def configuracion_series_guardar():
+    ensure_user_session()
+    form = {
+        'id_serie': str(request.form.get('id_serie') or '').strip(),
+        'tipo_documento': str(request.form.get('tipo_documento') or '').strip().upper(),
+        'serie': str(request.form.get('serie') or '').strip().upper(),
+        'ultimo_numero': request.form.get('ultimo_numero'),
+        'longitud': request.form.get('longitud'),
+        'activo': request.form.get('activo') == '1',
+        'serie_bloqueada': request.form.get('serie_bloqueada') == '1',
+    }
+    ok, msg = guardar_serie_documento(
+        form['id_serie'],
+        form['tipo_documento'],
+        form['serie'],
+        form['ultimo_numero'],
+        form['longitud'],
+        form['activo'],
+    )
+    flash(msg, 'success' if ok else 'error')
+    if ok:
+        return redirect(url_for('configuracion_series_page'))
+    return _render_configuracion_series(form)
+
+
+@app.route('/configuracion/series/estado', methods=['POST'])
+@login_required
+def configuracion_series_estado():
+    ensure_user_session()
+    ok, msg = cambiar_estado_serie(
+        request.form.get('id_serie'),
+        request.form.get('activo') == '1',
+    )
+    flash(msg, 'success' if ok else 'error')
+    return redirect(url_for('configuracion_series_page'))
+
+
 @app.route('/configuracion/alertas/enviar', methods=['POST'])
 @login_required
 def configuracion_alertas_enviar():
@@ -2841,9 +2951,12 @@ def ventas_editar_page(id_venta):
         fecha_actual=fecha_form,
         form_preservado={
             'id_venta': venta.get('idventa'),
+            'nro_venta': venta.get('nroventa') or '',
             'id_cliente': venta.get('idcliente'),
             'fecha_venta': fecha_form,
-            'tipo_comprobante': venta.get('tipocomprobante') or 'FACTURA',
+            'tipo_comprobante': venta.get('tipocomprobante') or 'NINGUNO',
+            'serie_comprobante': venta.get('seriecomprobante') or '',
+            'numero_comprobante': venta.get('numerocomprobante') or '',
             'nro_comprobante_ref': venta.get('nrocomprobanteref') or '',
             'incluye_igv': bool(venta.get('incluyeigv')),
             'estado_pago': venta.get('estadopago') or 'PENDIENTE',

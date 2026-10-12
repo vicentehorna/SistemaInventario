@@ -1,0 +1,375 @@
+{% extends "layout.html" %}
+
+{% block title %}Series y Correlativos{% endblock %}
+
+{% block extra_css %}
+<style>
+    .config-view {
+        --bg-main: #f8fafc;
+        --surface: #ffffff;
+        --border-color: #e2e8f0;
+        --text-dark: #1e293b;
+        --text-muted: #64748b;
+        --primary: #2563eb;
+        --primary-hover: #1d4ed8;
+        --focus-ring: rgba(37, 99, 235, 0.15);
+        --required-bg: #fffdf4;
+        --required-border: #ebdcb9;
+    }
+
+    .config-view.view-container {
+        padding: 0;
+        background-color: transparent;
+        min-height: auto;
+        margin: -0.25rem 0 0;
+    }
+
+    .config-view .section-header { margin-bottom: 1.75rem; }
+    .config-view .section-header h1 {
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: var(--text-dark);
+        margin: 0;
+    }
+    .config-view .section-header p {
+        font-size: 0.875rem;
+        color: var(--text-muted);
+        margin: 0.25rem 0 0;
+    }
+
+    .config-view .form-card-modern {
+        background: var(--surface);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.03);
+        padding: 2rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .config-view .card-subtitle-form {
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: var(--text-dark);
+        margin-bottom: 1.25rem;
+        border-bottom: 2px solid var(--bg-main);
+        padding-bottom: 0.5rem;
+    }
+
+    .config-view .grid-serie {
+        display: grid;
+        grid-template-columns: 2fr 1fr 1fr 1fr 1fr;
+        gap: 1.25rem;
+        align-items: start;
+    }
+
+    .config-view .form-field {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+    .config-view .form-field label {
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: var(--text-dark);
+    }
+    .config-view .field-hint {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+    }
+
+    .config-view .input-modern {
+        font-family: inherit;
+        font-size: 0.95rem;
+        color: var(--text-dark);
+        background-color: var(--surface);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 0.65rem 1rem;
+        outline: none;
+        transition: all 0.2s ease;
+        height: 42px;
+        box-sizing: border-box;
+        width: 100%;
+    }
+    .config-view .input-required {
+        background-color: var(--required-bg);
+        border-color: var(--required-border);
+    }
+    .config-view .input-modern:focus {
+        border-color: var(--primary);
+        box-shadow: 0 0 0 4px var(--focus-ring);
+        background-color: var(--surface);
+    }
+    .config-view .input-modern[readonly],
+    .config-view .input-modern:disabled {
+        background-color: var(--bg-main);
+        color: var(--text-muted);
+    }
+    .config-view .input-serie { text-transform: uppercase; }
+
+    .config-view .btn-modern {
+        font-size: 0.9rem;
+        font-weight: 500;
+        padding: 0.65rem 1.25rem;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: all 0.2s;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        border: none;
+        height: 42px;
+        text-decoration: none;
+    }
+    .config-view .btn-primary { background-color: var(--primary); color: #fff; }
+    .config-view .btn-primary:hover { background-color: var(--primary-hover); color: #fff; }
+    .config-view .btn-secondary-modern {
+        background-color: var(--surface);
+        color: var(--text-dark);
+        border: 1px solid var(--border-color);
+    }
+    .config-view .btn-secondary-modern:hover { background-color: var(--bg-main); color: var(--text-dark); }
+
+    .config-view .form-actions {
+        margin-top: 1.5rem;
+        padding-top: 1.25rem;
+        border-top: 1px solid var(--border-color);
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.75rem;
+    }
+
+    .config-view .switch-activo .form-check-input {
+        width: 3rem;
+        height: 1.5rem;
+        cursor: pointer;
+    }
+    .config-view .switch-activo .form-check-label {
+        font-weight: 600;
+        padding-left: 0.5rem;
+        padding-top: 0.15rem;
+        cursor: pointer;
+    }
+
+    .config-view .preview-numero {
+        font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+        font-size: 0.95rem;
+        color: var(--text-dark);
+    }
+
+    .config-view .table-series {
+        font-size: 0.875rem;
+        margin-bottom: 0;
+    }
+    .config-view .table-series th { background-color: #f1f5f9; white-space: nowrap; }
+    .config-view .table-series tr.fila-inactiva td { color: var(--text-muted); }
+    .config-view .acciones-serie {
+        display: flex;
+        gap: 0.4rem;
+        justify-content: center;
+    }
+    .config-view .acciones-serie form { margin: 0; }
+
+    @media (max-width: 992px) {
+        .config-view .grid-serie { grid-template-columns: 1fr 1fr; }
+    }
+    @media (max-width: 768px) {
+        .config-view .grid-serie { grid-template-columns: 1fr; }
+        .config-view .form-card-modern { padding: 1.25rem; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="config-view view-container">
+    <div class="section-header">
+        <h1>Series y Correlativos</h1>
+        <p>Numeración de los documentos internos. Cada tipo de documento usa una sola serie activa.</p>
+    </div>
+
+    <form action="{{ url_for('configuracion_series_guardar') }}" method="POST" class="form-card-modern" id="formSerie">
+        <div class="card-subtitle-form">{{ 'Editar Serie' if form.id_serie else 'Nueva Serie' }}</div>
+        <input type="hidden" name="id_serie" value="{{ form.id_serie }}">
+        <input type="hidden" name="serie_bloqueada" value="{{ '1' if form.serie_bloqueada else '0' }}">
+
+        <div class="grid-serie">
+            <div class="form-field">
+                <label for="tipo_documento">Tipo de documento</label>
+                {% if form.id_serie %}
+                <input type="hidden" name="tipo_documento" value="{{ form.tipo_documento }}">
+                <select id="tipo_documento" class="input-modern" disabled>
+                    <option>{{ tipos.get(form.tipo_documento, form.tipo_documento) }}</option>
+                </select>
+                {% else %}
+                <select id="tipo_documento" name="tipo_documento" class="input-modern input-required" required>
+                    <option value="" disabled {% if not form.tipo_documento %}selected{% endif %}>Seleccione...</option>
+                    {% for codigo, nombre in tipos.items() %}
+                    <option value="{{ codigo }}" {% if form.tipo_documento == codigo %}selected{% endif %}>{{ nombre }}</option>
+                    {% endfor %}
+                </select>
+                {% endif %}
+            </div>
+            <div class="form-field">
+                <label for="serie">Serie</label>
+                <input type="text" id="serie" name="serie" class="input-modern input-required input-serie" required
+                       maxlength="10" pattern="[A-Za-z0-9]{1,10}" title="Letras y números, máximo 10 caracteres"
+                       value="{{ form.serie }}" {% if form.serie_bloqueada %}readonly{% endif %}>
+                {% if form.serie_bloqueada %}
+                <span class="field-hint">Ya emitió documentos; no se puede renombrar.</span>
+                {% endif %}
+            </div>
+            <div class="form-field">
+                <label for="ultimo_numero">Último número</label>
+                <input type="number" id="ultimo_numero" name="ultimo_numero" class="input-modern input-required" required
+                       min="0" step="1" value="{{ form.ultimo_numero }}">
+                <span class="field-hint">El siguiente documento usará este número + 1.</span>
+            </div>
+            <div class="form-field">
+                <label for="longitud">Dígitos</label>
+                <input type="number" id="longitud" name="longitud" class="input-modern input-required" required
+                       min="4" max="10" step="1" value="{{ form.longitud }}">
+            </div>
+            <div class="form-field">
+                <label>Estado</label>
+                <div class="form-check form-switch switch-activo">
+                    <input class="form-check-input" type="checkbox" role="switch" id="chkActivo" name="activo" value="1"
+                           {% if form.activo %}checked{% endif %}>
+                    <label class="form-check-label" for="chkActivo" id="lblActivo">{{ 'Activa' if form.activo else 'Inactiva' }}</label>
+                </div>
+            </div>
+        </div>
+
+        <div class="mt-3">
+            <span class="field-hint">Próximo número:</span>
+            <span class="preview-numero" id="previewNumero">-</span>
+        </div>
+
+        <div class="form-actions">
+            {% if form.id_serie %}
+            <a href="{{ url_for('configuracion_series_page') }}" class="btn-modern btn-secondary-modern">
+                <i class="bi bi-x-lg" aria-hidden="true"></i> Cancelar
+            </a>
+            {% endif %}
+            <button type="submit" class="btn-modern btn-primary">
+                <i class="bi bi-save" aria-hidden="true"></i> Guardar
+            </button>
+        </div>
+    </form>
+
+    <div class="form-card-modern">
+        <div class="card-subtitle-form">Series Registradas</div>
+        <div class="table-responsive">
+            <table class="table table-bordered table-sm align-middle table-series">
+                <thead>
+                    <tr>
+                        <th>Tipo de documento</th>
+                        <th>Serie</th>
+                        <th class="text-end">Último número</th>
+                        <th>Próximo número</th>
+                        <th class="text-center">Dígitos</th>
+                        <th class="text-center">Estado</th>
+                        <th class="text-center">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for s in series %}
+                    <tr class="{{ '' if s.activo else 'fila-inactiva' }}">
+                        <td>{{ tipos.get(s.tipodocumento, s.descripcion) }}</td>
+                        <td><strong>{{ s.serie }}</strong></td>
+                        <td class="text-end">{{ s.ultimonumero }}</td>
+                        <td class="preview-numero">{{ s.proximo }}</td>
+                        <td class="text-center">{{ s.longitud }}</td>
+                        <td class="text-center">
+                            {% if s.activo %}
+                            <span class="badge bg-success">Activa</span>
+                            {% else %}
+                            <span class="badge bg-secondary">Inactiva</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div class="acciones-serie">
+                                <a href="{{ url_for('configuracion_series_page', editar=s.idserie) }}"
+                                   class="btn btn-sm btn-outline-primary" title="Editar">
+                                    <i class="bi bi-pencil" aria-hidden="true"></i>
+                                </a>
+                                <form action="{{ url_for('configuracion_series_estado') }}" method="POST"
+                                      data-confirm="{{ ('¿Desactivar la serie ' ~ s.serie ~ '? No se podrán emitir documentos de este tipo hasta activar otra serie.') if s.activo else ('¿Activar la serie ' ~ s.serie ~ '? La serie activa actual de este tipo quedará inactiva.') }}">
+                                    <input type="hidden" name="id_serie" value="{{ s.idserie }}">
+                                    <input type="hidden" name="activo" value="{{ '0' if s.activo else '1' }}">
+                                    {% if s.activo %}
+                                    <button type="submit" class="btn btn-sm btn-outline-secondary" title="Desactivar">
+                                        <i class="bi bi-pause-circle" aria-hidden="true"></i>
+                                    </button>
+                                    {% else %}
+                                    <button type="submit" class="btn btn-sm btn-outline-success" title="Activar">
+                                        <i class="bi bi-play-circle" aria-hidden="true"></i>
+                                    </button>
+                                    {% endif %}
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="7" class="text-center text-muted">
+                            No hay series registradas. Si es la primera vez, ejecute el script sql/Inventario_Series.sql.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const SIN_PREFIJO = {{ sin_prefijo | list | tojson }};
+    const tipo = document.getElementById('tipo_documento');
+    const serie = document.getElementById('serie');
+    const ultimo = document.getElementById('ultimo_numero');
+    const longitud = document.getElementById('longitud');
+    const preview = document.getElementById('previewNumero');
+    const chkActivo = document.getElementById('chkActivo');
+    const tipoActual = document.querySelector('input[type="hidden"][name="tipo_documento"]');
+
+    function actualizarPreview() {
+        const codigo = tipoActual ? tipoActual.value : tipo.value;
+        const numero = (parseInt(ultimo.value, 10) || 0) + 1;
+        const digitos = parseInt(longitud.value, 10) || 0;
+        const numeroTxt = String(numero).padStart(digitos, '0');
+        const prefijo = serie.value.trim().toUpperCase();
+        if (SIN_PREFIJO.includes(codigo)) {
+            preview.textContent = numeroTxt;
+        } else {
+            preview.textContent = prefijo ? prefijo + '-' + numeroTxt : numeroTxt;
+        }
+    }
+
+    [tipo, serie, ultimo, longitud].forEach(function (el) {
+        el.addEventListener('input', actualizarPreview);
+        el.addEventListener('change', actualizarPreview);
+    });
+    serie.addEventListener('input', function () {
+        const pos = serie.selectionStart;
+        serie.value = serie.value.toUpperCase();
+        serie.setSelectionRange(pos, pos);
+    });
+    chkActivo.addEventListener('change', function () {
+        document.getElementById('lblActivo').textContent = chkActivo.checked ? 'Activa' : 'Inactiva';
+    });
+
+    document.querySelectorAll('form[data-confirm]').forEach(function (f) {
+        f.addEventListener('submit', function (e) {
+            if (!window.confirm(f.dataset.confirm)) {
+                e.preventDefault();
+            }
+        });
+    });
+
+    actualizarPreview();
+});
+</script>
+{% endblock %}

@@ -95,11 +95,26 @@
         grid-template-columns: 1fr 1fr 1fr 1fr;
     }
 
-    .ventas-view .input-modern[readonly] {
+    .ventas-view .input-modern[readonly],
+    .ventas-view .input-modern:disabled {
         background-color: #f1f5f9;
         color: var(--text-muted);
         cursor: default;
     }
+
+    .ventas-view .input-modern.input-nro-venta {
+        font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+        font-weight: 600;
+        color: var(--text-dark);
+    }
+
+    .ventas-view .input-serie-sunat { text-transform: uppercase; }
+
+    .ventas-view .field-hint {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+    }
+    .ventas-view .field-hint-error { color: var(--danger); }
 
     .ventas-view .grid-selector-item {
         display: grid;
@@ -372,23 +387,55 @@
                 </div>
 
                 <div class="form-field">
-                    <label for="tipo_comprobante">Tipo Comprobante</label>
-                    <select id="tipo_comprobante" name="tipo_comprobante" class="input-modern input-required" required>
-                        {% set tipo_sel = fp.get('tipo_comprobante', 'FACTURA') %}
-                        <option value="FACTURA" {% if tipo_sel == 'FACTURA' %}selected{% endif %}>Factura</option>
-                        <option value="BOLETA" {% if tipo_sel == 'BOLETA' %}selected{% endif %}>Boleta</option>
-                        <option value="NOTA_VENTA" {% if tipo_sel == 'NOTA_VENTA' %}selected{% endif %}>Nota de Venta</option>
-                    </select>
+                    <label for="nro_venta">N° Nota de Venta</label>
+                    {% if fp.get('id_venta') %}
+                    <input type="text" id="nro_venta" class="input-modern input-nro-venta" readonly tabindex="-1"
+                           value="{{ fp.get('nro_venta') or '' }}">
+                    {% elif serie_nv %}
+                    <input type="text" id="nro_venta" class="input-modern input-nro-venta" readonly tabindex="-1"
+                           value="{{ serie_nv.proximo }}" title="Número que se asignará al guardar">
+                    <span class="field-hint">Se confirma al guardar.</span>
+                    {% else %}
+                    <input type="text" id="nro_venta" class="input-modern" readonly tabindex="-1" value="Sin serie activa">
+                    <span class="field-hint field-hint-error">
+                        Active una serie en <a href="{{ url_for('configuracion_series_page') }}">Series y Correlativos</a>.
+                    </span>
+                    {% endif %}
                 </div>
 
                 <div class="form-field">
-                    <label for="nro_comprobante_ref">Referencia / Nro Doc</label>
+                    <label for="nro_comprobante_ref">Referencia</label>
                     <input type="text" id="nro_comprobante_ref" name="nro_comprobante_ref" class="input-modern"
-                           placeholder="Ej: F001-000045" value="{{ fp.get('nro_comprobante_ref', '') }}">
+                           maxlength="50" placeholder="Ej: pedido u orden del cliente"
+                           value="{{ fp.get('nro_comprobante_ref') or '' }}">
                 </div>
             </div>
 
             <div class="grid-cabecera grid-cabecera-sec">
+                {% set tipo_sel = fp.get('tipo_comprobante') or 'NINGUNO' %}
+                <div class="form-field">
+                    <label for="tipo_comprobante">Comprobante SUNAT</label>
+                    <select id="tipo_comprobante" name="tipo_comprobante" class="input-modern input-required" required>
+                        <option value="NINGUNO" {% if tipo_sel == 'NINGUNO' %}selected{% endif %}>Sin comprobante</option>
+                        <option value="BOLETA" {% if tipo_sel == 'BOLETA' %}selected{% endif %}>Boleta</option>
+                        <option value="FACTURA" {% if tipo_sel == 'FACTURA' %}selected{% endif %}>Factura</option>
+                    </select>
+                </div>
+
+                <div class="form-field">
+                    <label for="serie_comprobante">Serie</label>
+                    <input type="text" id="serie_comprobante" name="serie_comprobante" class="input-modern input-serie-sunat"
+                           maxlength="4" pattern="[A-Za-z0-9]{4}" title="4 caracteres, ej.: F001, B001, E001"
+                           placeholder="Ej: E001" value="{{ fp.get('serie_comprobante') or '' }}">
+                </div>
+
+                <div class="form-field">
+                    <label for="numero_comprobante">Número</label>
+                    <input type="number" id="numero_comprobante" name="numero_comprobante" class="input-modern"
+                           min="1" max="99999999" step="1" placeholder="Ej: 702"
+                           value="{{ fp.get('numero_comprobante') or '' }}">
+                </div>
+
                 <div class="form-field">
                     <label>¿Precios Incluyen IGV?</label>
                     <div class="switch-container">
@@ -401,7 +448,9 @@
                         <span id="label-igv" style="font-size: 0.9rem; color: var(--text-dark);">No (0%)</span>
                     </div>
                 </div>
+            </div>
 
+            <div class="grid-cabecera grid-cabecera-sec">
                 <div class="form-field">
                     <label for="estado_pago">Estado de Pago Informativo</label>
                     {% set pago_sel = fp.get('estado_pago', 'PENDIENTE') %}
@@ -518,6 +567,8 @@
     const buscadorItem = document.getElementById('buscador_item');
     const stockHint = document.getElementById('stock-hint');
     const tipoComprobante = document.getElementById('tipo_comprobante');
+    const serieComprobante = document.getElementById('serie_comprobante');
+    const numeroComprobante = document.getElementById('numero_comprobante');
     const incluyeIgv = document.getElementById('incluye_igv');
     const labelIgv = document.getElementById('label-igv');
     const tbody = document.getElementById('tbody-detalles');
@@ -570,14 +621,24 @@
         stockHint.textContent = 'Stock disponible: ' + Math.max(0, maxDisp);
     }
 
+    function actualizarCamposComprobante() {
+        const conComprobante = tipoComprobante.value !== 'NINGUNO';
+        [serieComprobante, numeroComprobante].forEach(function (el) {
+            el.disabled = !conComprobante;
+            el.required = conComprobante;
+            el.classList.toggle('input-required', conComprobante);
+        });
+    }
+
     function evaluarTipoComprobante() {
         const tipo = tipoComprobante.value;
-        if (tipo === 'NOTA_VENTA') {
+        if (tipo === 'NINGUNO') {
             incluyeIgv.checked = false;
             labelIgv.textContent = 'No aplica (0%)';
         } else {
             labelIgv.textContent = incluyeIgv.checked ? 'Sí (18%)' : 'No (0%)';
         }
+        actualizarCamposComprobante();
         recalcularTodo();
     }
 
@@ -726,7 +787,7 @@
 
     function recalcularTodo() {
         const incluye = incluyeIgv.checked;
-        if (tipoComprobante.value === 'NOTA_VENTA') {
+        if (tipoComprobante.value === 'NINGUNO') {
             labelIgv.textContent = 'No aplica (0%)';
         } else {
             labelIgv.textContent = incluye ? 'Sí (18%)' : 'No (0%)';
@@ -830,6 +891,11 @@
     selectorItem.addEventListener('change', actualizarStockHint);
     tipoComprobante.addEventListener('change', evaluarTipoComprobante);
     incluyeIgv.addEventListener('change', recalcularTodo);
+    serieComprobante.addEventListener('input', function () {
+        const pos = serieComprobante.selectionStart;
+        serieComprobante.value = serieComprobante.value.toUpperCase();
+        serieComprobante.setSelectionRange(pos, pos);
+    });
 
     form.addEventListener('submit', function (e) {
         sincronizarDetallesJson();
@@ -844,6 +910,7 @@
         evaluarTipoComprobante();
     } else {
         labelIgv.textContent = incluyeIgv.checked ? 'Sí (18%)' : 'No (0%)';
+        actualizarCamposComprobante();
         recalcularTodo();
     }
     cargarDetallesPreservados();
